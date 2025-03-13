@@ -4,6 +4,7 @@ import numpy as np
 from redis.commands.search.query import Query
 import os
 import fitz
+import re
 
 # Initialize Redis connection
 redis_client = redis.Redis(host="localhost", port=6380, db=0)
@@ -60,6 +61,35 @@ def store_embedding(file: str, page: str, chunk: str, embedding: list):
         },
     )
     print(f"Stored embedding for: {chunk}")
+
+def extract_clean_pdf(pdf_path):
+    """Extract and clean text from a PDF file."""
+    doc = fitz.open(pdf_path)
+    cleaned_text = []
+    
+    for page_num, page in enumerate(doc):
+        text = page.get_text("text")
+        
+        # Remove page numbers (assumes standalone numbers at the end of text)
+        text = re.sub(r'\n\d+\n?$', '', text)
+        
+        # Replace special bullets and weird symbols
+        text = text.replace("●", "-").replace("■", "-").replace("○", "-")
+        
+        # Remove unnecessary multiple newlines while keeping paragraph breaks
+        text = re.sub(r'\n{2,}', '\n\n', text) 
+        text = re.sub(r'\n+', ' ', text) 
+        
+        # Remove double spaces
+        text = re.sub(r' +', ' ', text)
+
+        # Fix encoding issues
+        text = text.encode('utf-8', 'ignore').decode('utf-8')
+
+        # Trim leading/trailing spaces
+        cleaned_text.append(text.strip())  
+    
+    return cleaned_text
 
 
 # extract the text from a PDF by page
