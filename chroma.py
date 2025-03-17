@@ -25,7 +25,7 @@ embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="all-MiniLM-L6-v2"  # or another sentence-transformers model
 )
 
-collection_name = "foundations_pdf_collection"
+collection_name = "midterm_study_guide"
 
 # Create (or get if it already exists) the collection
 collection = client.get_or_create_collection(
@@ -96,6 +96,8 @@ def process_pdfs(data_dir):
                 # print(f"  Chunks: {chunks}")
                 for chunk_index, chunk in enumerate(chunks):
                     # embedding = calculate_embedding(chunk)
+
+                    '''
                     embedding = get_embedding(chunk)
                     store_embedding(
                         file=file_name,
@@ -104,16 +106,27 @@ def process_pdfs(data_dir):
                         chunk=str(chunk),
                         embedding=embedding,
                     )
+                    '''
+
+                    collection.add(
+                        documents=[chunk],
+                        metadatas=[{"source": pdf_path, "chunk_index": i}],
+                        ids=[f"foundations-pdf-chunk-{i}"]
+                    )
+
             print(f" -----> Processed {file_name}")
 
+            #print(f"Added {len(chunks)} chunks to collection '{collection_name}'.")
 
-# Add each chunk to Chroma
-# Here, we generate a unique ID for each chunk; you can store metadata, too.
-for i, chunk in enumerate(chunks):
-    collection.add(
-        documents=[chunk],
-        metadatas=[{"source": pdf_path, "chunk_index": i}],
-        ids=[f"foundations-pdf-chunk-{i}"]
+def main():
+    #REPLACE WITH YOUR DIRECTORY
+    process_pdfs("/Users/huytuonghoangle/Documents/GitHub/ds4300_pa02/ds4300 docs")
+
+    query_results = collection.query(
+        query_texts=["What is the capital of France?"],
+        n_results=3
     )
+    print(query_results)    
 
-print(f"Added {len(chunks)} chunks to collection '{collection_name}'.")
+if __name__ == "__main__":
+    main()
