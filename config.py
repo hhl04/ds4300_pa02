@@ -9,4 +9,4 @@ EMBEDDING_MODELS = {
     "ollama-nomic": "nomic-embed-text",
 }
 REDIS_HOST = "localhost"
-REDIS_PORT = 6380
+REDIS_PORT = 6379
