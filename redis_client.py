@@ -160,9 +160,9 @@ def query_redis(query_text: str):
         print(f"{doc.id} \n ----> {doc.vector_distance}\n")
 
 
-# def main():
-#     clear_redis_store()
-#     create_hnsw_index()
+def main():
+    clear_redis_store()
+    create_hnsw_index()
 
     #REPLACE WITH YOUR DIRECTORY
     process_pdfs("/Users/huytuonghoangle/Documents/GitHub/ds4300_pa02/ds4300 docs")
@@ -171,5 +171,5 @@ def query_redis(query_text: str):
     query_redis("What is the capital of France?")
 
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
