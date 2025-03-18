@@ -5,6 +5,7 @@ from redis.commands.search.query import Query
 import os
 import fitz
 import re
+from process_docs import process_pdfs
 
 # Initialize Redis connection
 redis_client = redis.Redis(host="localhost", port=6380, db=0)
@@ -159,9 +160,9 @@ def query_redis(query_text: str):
         print(f"{doc.id} \n ----> {doc.vector_distance}\n")
 
 
-def main():
-    clear_redis_store()
-    create_hnsw_index()
+# def main():
+#     clear_redis_store()
+#     create_hnsw_index()
 
     #REPLACE WITH YOUR DIRECTORY
     process_pdfs("/Users/huytuonghoangle/Documents/GitHub/ds4300_pa02/ds4300 docs")
@@ -170,5 +171,5 @@ def main():
     query_redis("What is the capital of France?")
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
