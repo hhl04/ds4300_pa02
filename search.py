@@ -1,4 +1,4 @@
-import redis
+import redis_client
 import json
 import numpy as np
 #from sentence_transformers import SentenceTransformer
@@ -9,7 +9,7 @@ from redis.commands.search.field import VectorField, TextField
 
 # Initialize models
 # embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-redis_client = redis.StrictRedis(host="localhost", port=6380, decode_responses=True)
+redis_client = redis_client.StrictRedis(host="localhost", port=6380, decode_responses=True)
 
 VECTOR_DIM = 768
 INDEX_NAME = "embedding_index"
@@ -153,3 +153,4 @@ def interactive_search():
 
 if __name__ == "__main__":
     interactive_search()
+ 

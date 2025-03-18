@@ -5,6 +5,7 @@ from redis.commands.search.query import Query
 import os
 import fitz
 import re
+from process_docs import process_pdfs
 
 # Initialize Redis connection
 redis_client = redis.Redis(host="localhost", port=6380, db=0)
