@@ -1,66 +1,43 @@
+import chromadb
+from chromadb.config import Settings
+from chromadb.utils import embedding_functions
+
 import ollama
-import redis
 import numpy as np
-from redis.commands.search.query import Query
 import os
 import fitz
 import re
 
-# Initialize Redis connection
-redis_client = redis.Redis(host="localhost", port=6380, db=0)
+# Initialize Chroma connection
+chroma_client = chromadb.HttpClient(host='localhost', port=8000)
+chroma_client.heartbeat()
 
-VECTOR_DIM = 768
-INDEX_NAME = "embedding_index"
-DOC_PREFIX = "doc:"
-DISTANCE_METRIC = "COSINE"
-
-
-# used to clear the redis vector store
-def clear_redis_store():
-    print("Clearing existing Redis store...")
-    redis_client.flushdb()
-    print("Redis store cleared.")
-
-
-# Create an HNSW index in Redis
-def create_hnsw_index():
-    try:
-        redis_client.execute_command(f"FT.DROPINDEX {INDEX_NAME} DD")
-    except redis.exceptions.ResponseError:
-        pass
-
-    redis_client.execute_command(
-        f"""
-        FT.CREATE {INDEX_NAME} ON HASH PREFIX 1 {DOC_PREFIX}
-        SCHEMA text TEXT
-        embedding VECTOR HNSW 6 DIM {VECTOR_DIM} TYPE FLOAT32 DISTANCE_METRIC {DISTANCE_METRIC}
-        """
+# Initialize Chroma client with local persistence
+client = chromadb.Client(
+    Settings(
+        chroma_db_impl="duckdb+parquet",
+        persist_directory="./chroma_db"  # folder to persist DB
     )
-    print("Index created successfully.")
+)
 
+# Use a local SentenceTransformer as the embedding function
+embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"  # or another sentence-transformers model
+)
+
+collection_name = "midterm_study_guide"
+
+# Create (or get if it already exists) the collection
+collection = client.get_or_create_collection(
+    name=collection_name,
+    embedding_function=embedding_fn
+)
 
 # Generate an embedding using nomic-embed-text
 def get_embedding(text: str, model: str = "nomic-embed-text") -> list:
 
     response = ollama.embeddings(model=model, prompt=text)
     return response["embedding"]
-
-
-# store the embedding in Redis
-def store_embedding(file: str, page: str, chunk: str, embedding: list):
-    key = f"{DOC_PREFIX}:{file}_page_{page}_chunk_{chunk}"
-    redis_client.hset(
-        key,
-        mapping={
-            "file": file,
-            "page": page,
-            "chunk": chunk,
-            "embedding": np.array(
-                embedding, dtype=np.float32
-            ).tobytes(),  # Store as byte array
-        },
-    )
-    print(f"Stored embedding for: {chunk}")
 
 #TEXT PREP STRATEGY
 def extract_clean_pdf(pdf_path):
@@ -92,17 +69,6 @@ def extract_clean_pdf(pdf_path):
     
     return cleaned_text
 
-
-# extract the text from a PDF by page
-def extract_text_from_pdf(pdf_path):
-    """Extract text from a PDF file."""
-    doc = fitz.open(pdf_path)
-    text_by_page = []
-    for page_num, page in enumerate(doc):
-        text_by_page.append((page_num, page.get_text()))
-    return text_by_page
-
-
 # split the text into chunks with overlap
 # CHUNK SIZE and OVERLAP
 def split_text_into_chunks(text, chunk_size=300, overlap=50):
@@ -130,6 +96,8 @@ def process_pdfs(data_dir):
                 # print(f"  Chunks: {chunks}")
                 for chunk_index, chunk in enumerate(chunks):
                     # embedding = calculate_embedding(chunk)
+
+                    '''
                     embedding = get_embedding(chunk)
                     store_embedding(
                         file=file_name,
@@ -138,37 +106,27 @@ def process_pdfs(data_dir):
                         chunk=str(chunk),
                         embedding=embedding,
                     )
+                    '''
+
+                    collection.add(
+                        documents=[chunk],
+                        metadatas=[{"source": pdf_path, "chunk_index": i}],
+                        ids=[f"foundations-pdf-chunk-{i}"]
+                    )
+
             print(f" -----> Processed {file_name}")
 
-
-def query_redis(query_text: str):
-    q = (
-        Query("*=>[KNN 5 @embedding $vec AS vector_distance]")
-        .sort_by("vector_distance")
-        .return_fields("id", "vector_distance")
-        .dialect(2)
-    )
-    query_text = "Efficient search in vector databases"
-    embedding = get_embedding(query_text)
-    res = redis_client.ft(INDEX_NAME).search(
-        q, query_params={"vec": np.array(embedding, dtype=np.float32).tobytes()}
-    )
-    # print(res.docs)
-
-    for doc in res.docs:
-        print(f"{doc.id} \n ----> {doc.vector_distance}\n")
-
+            #print(f"Added {len(chunks)} chunks to collection '{collection_name}'.")
 
 def main():
-    clear_redis_store()
-    create_hnsw_index()
-
     #REPLACE WITH YOUR DIRECTORY
     process_pdfs("/Users/huytuonghoangle/Documents/GitHub/ds4300_pa02/ds4300 docs")
 
-    print("\n---Done processing PDFs---\n")
-    query_redis("What is the capital of France?")
-
+    query_results = collection.query(
+        query_texts=["What is the capital of France?"],
+        n_results=3
+    )
+    print(query_results)    
 
 if __name__ == "__main__":
     main()
