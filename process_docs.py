@@ -103,7 +103,7 @@ def process_pdfs(data_dir):
 if __name__ == "__main__":
 
     print("\n Testing extract_clean_pdf()")
-    test_pdf = "/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs/08 - PyMongo.pdf"
+    test_pdf = "./ds4300 docs/08 - PyMongo.pdf"
     clean_pdf = extract_clean_pdf(test_pdf)
     print(clean_pdf)
 
@@ -125,5 +125,5 @@ if __name__ == "__main__":
 
     # Test process_pdfs()
     print('\nTesting process_pdfs()')
-    test_dir = "/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs"
+    test_dir = "./ds4300 docs"
     process_pdfs(test_dir)
