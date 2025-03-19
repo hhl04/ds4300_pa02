@@ -21,6 +21,14 @@ except ImportError:
 
 # Set test data directory
 DATA_DIR = "./ds4300 docs"
+
+# Add path validation
+if not os.path.exists(DATA_DIR):
+    print(f"Warning: Data directory {DATA_DIR} does not exist")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Absolute path of data directory should be: {os.path.abspath(DATA_DIR)}")
+    print("Please ensure this directory exists and contains test PDF files")
+
 # Test questions
 TEST_QUESTIONS = [
     "What is a NoSQL database?",
@@ -33,7 +41,14 @@ def extract_clean_pdf(pdf_path):
     import fitz
     import re
     
-    print(f"Processing PDF: {pdf_path}")
+    print(f"Processing PDF file: {pdf_path}")
+    
+    # Check if file exists
+    if not os.path.exists(pdf_path):
+        print(f"Error: PDF file does not exist: {pdf_path}")
+        print(f"Absolute path: {os.path.abspath(pdf_path)}")
+        return []
+    
     try:
         doc = fitz.open(pdf_path)
         cleaned_text = []
