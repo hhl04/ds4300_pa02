@@ -9,6 +9,8 @@ import re
 from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS
 from embeddings import get_embedding, benchmark_embedding
 
+redis_client = redis.StrictRedis(host='localhost', port=6379, decode_responses=True)
+
 def extract_clean_pdf(pdf_path,remove_pgnum=True, remove_sbullets=True, clean_formatting=True, remove_whitespace=True, remove_punct=True):
     """Extract and clean text from a PDF file."""
     doc = fitz.open(pdf_path)
@@ -97,13 +99,33 @@ def process_pdfs(data_dir):
 
     return all_chunks
 
+def create_vector_index():
+    """
+    Checks if the Redis vector index exists; if not, creates it.
+    """
+    try:
+        # Check if the index exists
+        index_info = redis_client.execute_command("FT._LIST")
+        if "embedding_index" not in index_info:
+            redis_client.execute_command(
+                "FT.CREATE embedding_index ON HASH PREFIX 1 doc: "
+                "SCHEMA text TEXT "
+                "embedding VECTOR HNSW 6 DIM 768 TYPE FLOAT32 DISTANCE_METRIC COSINE"
+            )
+            print("Redis vector index created successfully!")
+        else:
+            print("Redis vector index already exists.")
+    except Exception as e:
+        print(f"Error creating vector index: {e}")
 
 
 # TESTING 
 if __name__ == "__main__":
+    
+    create_vector_index()
 
     print("\n Testing extract_clean_pdf()")
-    test_pdf = "/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs/08 - PyMongo.pdf"
+    test_pdf = "./ds4300 docs/08 - PyMongo.pdf"
     clean_pdf = extract_clean_pdf(test_pdf)
     print(clean_pdf)
 
@@ -125,5 +147,5 @@ if __name__ == "__main__":
 
     # Test process_pdfs()
     print('\nTesting process_pdfs()')
-    test_dir = "/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs"
+    test_dir = "./ds4300 docs"
     process_pdfs(test_dir)
