@@ -81,7 +81,6 @@ def run_ingestion(data_dir):
         chunk = chunk_data["chunk"]
         file = chunk_data["file"]
         page = chunk_data["page"]
-        chunk_index = chunk_data["chunk_index"]
         chunk_size = chunk_data["chunk_size"]
         overlap = chunk_data["overlap"]
 
@@ -104,7 +103,6 @@ def query_redis(query_text: str, model_name: str):
         Query(f"*=>[KNN 5 @{field} $vec AS vector_distance]")
         .sort_by("vector_distance")
         .return_fields("file", "page", "chunk", "vector_distance")
-        #.return_fields("id","vector_distance")
         .dialect(2)
     )
 
@@ -114,10 +112,10 @@ def query_redis(query_text: str, model_name: str):
     )
 
     if not res.docs:
-            print("⚠️ No matches found for your query.")
+            print("No matches found for your query.")
             return
 
-    print(f"✅ Found {len(res.docs)} result(s):")
+    print(f"Found {len(res.docs)} result(s):")
     for doc in res.docs:
         print(f"{doc.id} | Distance: {doc.vector_distance} | File: {doc.file} | Chunk: {doc.chunk}")
 
@@ -128,7 +126,7 @@ if __name__ == "__main__":
     clear_redis_store()
     create_hnsw_index()
     run_ingestion("/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs/")
-    print("✅ Ingestion completed!")
+    print("Ingestion completed!")
 
     query_redis("MongoDB is a document database", model_name="all-MiniLM-L6-v2")
     

@@ -45,9 +45,9 @@ def search_embeddings(query, model_name, top_k=3):
         ]
 
         for result in top_results:
-            print(
-                f"---> File: {result['file']}, Page: {result['page']}, Chunk: {result['chunk']}, Sim: {result['similarity']:.2f}"
-            )
+            sim = float(result['similarity'])
+            print(f"---> File: {result['file']}, Page: {result['page']}, Chunk: {result['chunk']}, Sim: {sim:.2f}")
+
 
         return top_results
 
@@ -70,12 +70,12 @@ def generate_rag_response(query, context_results):
     Use the following context to answer the query as accurately as possible. If the context is 
     not relevant to the query, say 'I don't know'.
 
-Context:
-{context_str}
+    Context:
+    {context_str}
 
-Query: {query}
+    Query: {query}
 
-Answer:"""
+    Answer:"""
 
     response = ollama.chat(
         model="mistral:latest", messages=[{"role": "user", "content": prompt}]
