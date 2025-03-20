@@ -4,6 +4,7 @@ import ollama
 from redis.commands.search.query import Query
 from config import EMBEDDING_MODELS, VECTOR_INDEXES
 
+# PORT NUMBER
 redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
 
 INDEX_384 = "embedding_index_384"  # For MiniLM (384 dimensions)

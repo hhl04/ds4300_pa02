@@ -8,6 +8,7 @@ import re
 from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS, VECTOR_INDEXES
 from embeddings import get_embedding
 
+# PORT NUMBER
 redis_client = redis.StrictRedis(host='localhost', port=6379, decode_responses=True)
 
 def extract_clean_pdf(pdf_path, remove_pgnum=True, remove_sbullets=True, clean_formatting=True, remove_whitespace=True, remove_punct=True):
