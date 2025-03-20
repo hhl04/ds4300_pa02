@@ -2,67 +2,91 @@ import redis
 import numpy as np
 import ollama
 from redis.commands.search.query import Query
+from config import EMBEDDING_MODELS, VECTOR_INDEXES
 
 redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
 
-INDEX_NAME = "embedding_index"
-VECTOR_DIM = 768  
+INDEX_384 = "embedding_index_384"  # For MiniLM (384 dimensions)
+INDEX_768 = "embedding_index_768"  # For mpnet-base & InstructorXL (768 dimensions)
 
-def get_embedding(text: str, model: str = "nomic-embed-text") -> list:
-    response = ollama.embeddings(model=model, prompt=text)
-    embedding = response["embedding"]
+# Define vector dimensions for each model
+VECTOR_DIMS = {
+    "all-MiniLM-L6-v2": 384,
+    "all-mpnet-base-v2": 768,
+    "InstructorXL": 768
+}
 
-    if len(embedding) > VECTOR_DIM:
-        print(f"⚠️ Truncating embedding: generated {len(embedding)} dimensions, Redis requires {VECTOR_DIM} dimensions")
-        embedding = embedding[:VECTOR_DIM]
-    elif len(embedding) < VECTOR_DIM:
-        print(f"⚠️ Padding embedding: generated {len(embedding)} dimensions, Redis requires {VECTOR_DIM} dimensions")
-        embedding += [0.0] * (VECTOR_DIM - len(embedding))
+def get_embedding(text: str, model_name: str) -> list:
+    if model_name not in EMBEDDING_MODELS:
+        raise ValueError(f"❌ Model {model_name} is not recognized!")
+
+    model, expected_dim = EMBEDDING_MODELS[model_name]
+    embedding = model.encode(text).tolist()
+
+    # Ensure correct embedding dimension
+    if len(embedding) != expected_dim:
+        raise ValueError(f"❌ Error: Generated {len(embedding)} dimensions, expected {expected_dim} for {model_name}!")
 
     return embedding
 
-def search_embeddings(query, top_k=5):
-    query_embedding = get_embedding(query)
+
+def search_embeddings(query: str, model_name: str, top_k=3):
+    index_name = VECTOR_INDEXES[model_name]
+    query_embedding = get_embedding(query, model_name)
     query_vector = np.array(query_embedding, dtype=np.float32).tobytes()
 
     try:
         q = (
             Query("*=>[KNN {} @embedding $vec AS vector_distance]".format(top_k))
             .sort_by("vector_distance")
-            .return_fields("text", "vector_distance", "file", "page") 
+            .return_fields("text", "vector_distance", "file", "page")
             .dialect(2)
         )
 
-        results = redis_client.ft(INDEX_NAME).search(q, query_params={"vec": query_vector})
+        results = redis_client.ft(index_name).search(q, query_params={"vec": query_vector})
 
         top_results = []
         for doc in results.docs:
-            doc_dict = doc.__dict__  
-            print(f"Redis returned keys: {doc_dict.keys()}")
+            doc_dict = doc.__dict__
+            print(f"🔍 Redis returned keys: {doc_dict.keys()}")
 
             top_results.append({
-                "file": doc_dict.get("file", "Unknown"),  
-                "page": doc_dict.get("page", "Unknown"),  
-                "chunk": doc_dict.get("text", ""),  
-                "similarity": float(doc_dict.get("vector_distance", 0))  
+                "model": model_name,
+                "file": doc_dict.get("file", "Unknown"),
+                "page": doc_dict.get("page", "Unknown"),
+                "chunk": doc_dict.get("text", ""),
+                "similarity": float(doc_dict.get("vector_distance", 0))
             })
-
-        print("\n🔍 **Redis Search Results**:")
-        for res in top_results:
-            print(f"📄 File: {res['file']}, 📄 Page: {res['page']}\n📖 Content: {res['chunk'][:200]}...\n")
 
         return top_results
 
     except Exception as e:
-        print(f"Search error: {e}")
+        print(f"❌ Search error in {index_name}: {e}")
         return []
 
+# Search using all models and aggregate results
+def search_with_all_models(query, top_k=3):
+    all_results = []
+    for model in VECTOR_DIMS.keys():
+        results = search_embeddings(query, model, top_k)
+        all_results.extend(results)
+
+    # Sort results by similarity score
+    sorted_results = sorted(all_results, key=lambda x: x["similarity"], reverse=False)
+
+    print("\n🔍 **Aggregated Search Results from All Models**:")
+    for res in sorted_results[:top_k]:  
+        print(f"📄 Model: {res['model']} | File: {res['file']}, Page: {res['page']}\n📖 {res['chunk'][:200]}...\n")
+
+    return sorted_results[:top_k]
+
+# Generate a response using retrieved context
 def generate_rag_response(query, context_results):
     if not context_results:
         return "I don't know. No relevant information found in the database."
 
     context_str = "\n".join([
-        f"From {res['file']} (Page {res['page']}):\n{res['chunk']}"
+        f"From {res['file']} (Page {res['page']}, Model: {res['model']}):\n{res['chunk']}"
         for res in context_results
     ])
 
@@ -77,11 +101,12 @@ def generate_rag_response(query, context_results):
     Query: {query}
 
     Answer:"""
-    
+
     response = ollama.chat(model="mistral:latest", messages=[{"role": "user", "content": prompt}])
 
     return response["message"]["content"]
 
+# Interactive search interface
 def interactive_search():
     print("🔍 **RAG Search Interface**")
     print("Type 'exit' to quit")
@@ -91,10 +116,8 @@ def interactive_search():
         if query.lower() == "exit":
             break
         
-        # Search for relevant embeddings
-        context_results = search_embeddings(query)
+        context_results = search_with_all_models(query)
         
-         # Generate RAG response
         response = generate_rag_response(query, context_results)
 
         print("\n--- Response ---\n", response)

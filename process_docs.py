@@ -5,7 +5,7 @@ import os
 import fitz
 import re
 #from redis_client import store_embedding
-from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS
+from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS, VECTOR_INDEXES
 from embeddings import get_embedding
 
 redis_client = redis.StrictRedis(host='localhost', port=6379, decode_responses=True)
@@ -70,36 +70,42 @@ def process_pdfs(data_dir):
                 chunks = split_text_into_chunks(text, chunk_size=300, overlap=50)
 
                 for chunk_index, chunk in enumerate(chunks):
-                    embedding = get_embedding(chunk)  
-                    redis_key = f"doc:{file_name}:page{page_num}:chunk{chunk_index}"
+                    for model_name, (model, dim) in EMBEDDING_MODELS.items():
+                        embedding = get_embedding(chunk, model_name)  
+                        redis_key = f"doc:{file_name}:page{page_num}:chunk{chunk_index}:{model_name}"
 
-                    redis_client.hset(redis_key, mapping={
-                        "text": chunk,
-                        "embedding": np.array(embedding, dtype=np.float32).tobytes(),
-                        "file": file_name,  
-                        "page": page_num    
-                    })
+                        redis_client.hset(redis_key, mapping={
+                            "text": chunk,
+                            "embedding": np.array(embedding, dtype=np.float32).tobytes(),
+                            "file": file_name,  
+                            "page": page_num,
+                            "model": model_name  
+                        })
 
             print(f"✅ Finished processing {file_name}")
 
-def create_vector_index():
-    """Check if the Redis vector index exists; if not, create it"""
+def create_vector_indexes():
+    """Create separate Redis vector indexes for each embedding model"""
     try:
         index_info = redis_client.execute_command("FT._LIST")
-        if "embedding_index" not in index_info:
-            redis_client.execute_command(
-                "FT.CREATE embedding_index ON HASH PREFIX 1 doc: "
-                "SCHEMA text TEXT "
-                "file TEXT "
-                "page NUMERIC "
-                "embedding VECTOR HNSW 6 TYPE FLOAT32 DIM 768 DISTANCE_METRIC COSINE"
-            )
-            print("✅ Redis vector index created successfully!")
-        else:
-            print("✅ Redis vector index already exists, no need to create.")
+
+        for model_name, index_name in VECTOR_INDEXES.items():
+            _, dim = EMBEDDING_MODELS[model_name]  # Get correct dimension
+            if index_name not in index_info:
+                redis_client.execute_command(
+                    f"FT.CREATE {index_name} ON HASH PREFIX 1 doc: "
+                    f"SCHEMA text TEXT "
+                    f"file TEXT "
+                    f"page NUMERIC "
+                    f"model TEXT "
+                    f"embedding VECTOR HNSW 6 TYPE FLOAT32 DIM {dim} DISTANCE_METRIC COSINE"
+                )
+                print(f"✅ Redis vector index {index_name} created successfully!")
+            else:
+                print(f"✅ Redis vector index {index_name} already exists, no need to create.")
     except Exception as e:
-        print(f"❌ Error creating vector index: {e}")
+        print(f"Error creating vector indexes: {e}")
 
 if __name__ == "__main__":
-    create_vector_index()
+    create_vector_indexes()
     process_pdfs("ds4300 docs")
