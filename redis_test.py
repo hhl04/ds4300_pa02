@@ -130,3 +130,4 @@ if __name__ == "__main__":
 
     query_redis("MongoDB is a document database", model_name="all-MiniLM-L6-v2")
     
+ 
