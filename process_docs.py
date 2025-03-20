@@ -8,10 +8,17 @@ import re
 from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS, VECTOR_INDEXES
 from embeddings import get_embedding
 
+import time
+import nltk
+from nltk.corpus import stopwords
+import sys
+
 redis_client = redis.StrictRedis(host='localhost', port=6379, decode_responses=True)
+
 
 def extract_clean_pdf(pdf_path, remove_pgnum=True, remove_sbullets=True, clean_formatting=True, remove_whitespace=True, remove_punct=True):
     """Extract text from a PDF file and return a dictionary {page_number: cleaned_text}"""
+
     doc = fitz.open(pdf_path)
     extracted_text = {}
 
@@ -21,7 +28,7 @@ def extract_clean_pdf(pdf_path, remove_pgnum=True, remove_sbullets=True, clean_f
         if remove_pgnum:
             # Remove page numbers (assumes standalone numbers at the end of text)
             text = re.sub(r'\n\d+\n?$', '', text)
-
+            
         if remove_sbullets:
             # Replace special bullets and weird symbols
             text = text.replace("●", "-").replace("■", "-").replace("○", "-")
@@ -33,13 +40,33 @@ def extract_clean_pdf(pdf_path, remove_pgnum=True, remove_sbullets=True, clean_f
             
             # Remove double spaces
             text = re.sub(r' +', ' ', text)
-            
+       
             # Fix encoding issues
             text = text.encode('utf-8', 'ignore').decode('utf-8')
 
         if remove_punct:
-            # Remove punct
-            text = re.sub(r'[^\w\s]', '', text)
+            # Only remove punctuation if explicitly requested
+            # Be careful with code - preferably don't use this option for code-heavy documents
+            if preserve_code:
+                # Identify potential code blocks to preserve
+                lines = text.split('\n')
+                processed_lines = []
+                
+                for line in lines:
+                    code_indicators = ['import ', 'from ', ' = ', '(', ')', 'def ', 'class ', '{}', '[]', '+=', '-=', '*=', '/=']
+                    is_likely_code = any(indicator in line for indicator in code_indicators)
+                    
+                    if is_likely_code:
+                        processed_lines.append(line)  # Preserve code lines as-is
+                    else:
+                        # Remove punctuation from non-code lines
+                        processed_line = re.sub(r'[^\w\s]', '', line)
+                        processed_lines.append(processed_line)
+                
+                text = '\n'.join(processed_lines)
+            else:
+                # Remove all punctuation
+                text = re.sub(r'[^\w\s]', '', text)
 
         if remove_whitespace:
             text = text.strip()
@@ -48,7 +75,9 @@ def extract_clean_pdf(pdf_path, remove_pgnum=True, remove_sbullets=True, clean_f
         if len(text) > 3:
             extracted_text[page_num + 1] = text  
 
+
     return extracted_text
+
 
 def split_text_into_chunks(text, chunk_size=300, overlap=50):
     """Split text into chunks with overlap"""
@@ -83,6 +112,7 @@ def process_pdfs(data_dir):
                         })
 
             print(f"✅ Finished processing {file_name}")
+
 
 def create_vector_indexes():
     """Create separate Redis vector indexes for each embedding model"""
