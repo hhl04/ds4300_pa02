@@ -41,5 +41,3 @@ sample_text = "This is a test sentence for embedding benchmarking."
 for model in EMBEDDING_MODELS.keys():
     result = benchmark_embedding(sample_text, model)
     print(f"{result}")  
-
-
