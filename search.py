@@ -1,72 +1,55 @@
-import redis_client
-import json
+import redis
 import numpy as np
-#from sentence_transformers import SentenceTransformer
 import ollama
 from redis.commands.search.query import Query
-from redis.commands.search.field import VectorField, TextField
 
-
-# Initialize models
-# embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
 
-VECTOR_DIM = 768
 INDEX_NAME = "embedding_index"
-DOC_PREFIX = "doc:"
-DISTANCE_METRIC = "COSINE"
-
-# def cosine_similarity(vec1, vec2):
-#     """Calculate cosine similarity between two vectors."""
-#     return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
-
+VECTOR_DIM = 768  
 
 def get_embedding(text: str, model: str = "nomic-embed-text") -> list:
-
     response = ollama.embeddings(model=model, prompt=text)
-    return response["embedding"]
+    embedding = response["embedding"]
 
+    if len(embedding) > VECTOR_DIM:
+        print(f"⚠️ Truncating embedding: generated {len(embedding)} dimensions, Redis requires {VECTOR_DIM} dimensions")
+        embedding = embedding[:VECTOR_DIM]
+    elif len(embedding) < VECTOR_DIM:
+        print(f"⚠️ Padding embedding: generated {len(embedding)} dimensions, Redis requires {VECTOR_DIM} dimensions")
+        embedding += [0.0] * (VECTOR_DIM - len(embedding))
 
-def search_embeddings(query, top_k=3):
+    return embedding
 
+def search_embeddings(query, top_k=5):
     query_embedding = get_embedding(query)
-
-    # Convert embedding to bytes for Redis search
     query_vector = np.array(query_embedding, dtype=np.float32).tobytes()
 
     try:
-        # Construct the vector similarity search query
-        # Use a more standard RediSearch vector search syntax
-        # q = Query("*").sort_by("embedding", query_vector)
-
         q = (
-            Query("*=>[KNN 5 @embedding $vec AS vector_distance]")
+            Query("*=>[KNN {} @embedding $vec AS vector_distance]".format(top_k))
             .sort_by("vector_distance")
-            .return_fields("id", "file", "page", "chunk", "vector_distance")
+            .return_fields("text", "vector_distance", "file", "page") 
             .dialect(2)
         )
 
-        # Perform the search
-        results = redis_client.ft(INDEX_NAME).search(
-            q, query_params={"vec": query_vector}
-        )
+        results = redis_client.ft(INDEX_NAME).search(q, query_params={"vec": query_vector})
 
-        # Transform results into the expected format
-        top_results = [
-            {
-                "file": result.file,
-                "page": result.page,
-                "chunk": result.chunk,
-                "similarity": result.vector_distance,
-            }
-            for result in results.docs
-        ][:top_k]
+        top_results = []
+        for doc in results.docs:
+            doc_dict = doc.__dict__  
+            print(f"Redis returned keys: {doc_dict.keys()}")
 
-        # Print results for debugging
-        for result in top_results:
-            print(
-                f"---> File: {result['file']}, Page: {result['page']}, Chunk: {result['chunk']}"
-            )
+            top_results.append({
+                "file": doc_dict.get("file", "Unknown"),  
+                "page": doc_dict.get("page", "Unknown"),  
+                "chunk": doc_dict.get("text", ""),  
+                "similarity": float(doc_dict.get("vector_distance", 0))  
+            })
+
+        print("\n🔍 **Redis Search Results**:")
+        for res in top_results:
+            print(f"📄 File: {res['file']}, 📄 Page: {res['page']}\n📖 Content: {res['chunk'][:200]}...\n")
 
         return top_results
 
@@ -74,84 +57,55 @@ def search_embeddings(query, top_k=3):
         print(f"Search error: {e}")
         return []
 
-
 def generate_rag_response(query, context_results):
+    if not context_results:
+        return "I don't know. No relevant information found in the database."
 
-    # Prepare context string
-    context_str = "\n".join(
-        [
-            f"From {result.get('file', 'Unknown file')} (page {result.get('page', 'Unknown page')}, chunk {result.get('chunk', 'Unknown chunk')}) "
-            f"with similarity {float(result.get('similarity', 0)):.2f}"
-            for result in context_results
-        ]
-    )
+    context_str = "\n".join([
+        f"From {res['file']} (Page {res['page']}):\n{res['chunk']}"
+        for res in context_results
+    ])
 
-    print(f"context_str: {context_str}")
+    print(f"📝 **Context passed to LLM:**\n{context_str[:500]}...\n")
 
-    # Construct prompt with context
-    prompt = f"""You are a helpful AI assistant. 
-    Use the following context to answer the query as accurately as possible. If the context is 
-    not relevant to the query, say 'I don't know'.
+    prompt = f"""You are an AI assistant. Use the following context to answer the query.
+    If the context is not relevant, say 'I don't know'.
 
-Context:
-{context_str}
+    Context:
+    {context_str}
 
-Query: {query}
+    Query: {query}
 
-Answer:"""
-
-    # Generate response using Ollama
-    response = ollama.chat(
-        model="mistral:latest", messages=[{"role": "user", "content": prompt}]
-    )
+    Answer:"""
+    
+    response = ollama.chat(model="mistral:latest", messages=[{"role": "user", "content": prompt}])
 
     return response["message"]["content"]
 
-
 def interactive_search():
-    """Interactive search interface."""
-    print("🔍 RAG Search Interface")
+    print("🔍 **RAG Search Interface**")
     print("Type 'exit' to quit")
 
     while True:
         query = input("\nEnter your search query: ")
-
         if query.lower() == "exit":
             break
-
+        
         # Search for relevant embeddings
         context_results = search_embeddings(query)
-
-        # Generate RAG response
+        
+         # Generate RAG response
         response = generate_rag_response(query, context_results)
 
-        print("\n--- Response ---")
-        print(response)
-
-
-# def store_embedding(file, page, chunk, embedding):
-#     """
-#     Store an embedding in Redis using a hash with vector field.
-
-#     Args:
-#         file (str): Source file name
-#         page (str): Page number
-#         chunk (str): Chunk index
-#         embedding (list): Embedding vector
-#     """
-#     key = f"{file}_page_{page}_chunk_{chunk}"
-#     redis_client.hset(
-#         key,
-#         mapping={
-#             "embedding": np.array(embedding, dtype=np.float32).tobytes(),
-#             "file": file,
-#             "page": page,
-#             "chunk": chunk,
-#         },
-#     )
-
+        print("\n--- Response ---\n", response)
 
 if __name__ == "__main__":
     interactive_search()
+
+
+
+
+
+
  
  
