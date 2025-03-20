@@ -16,7 +16,7 @@ DISTANCE_METRIC = "COSINE"
 def sanitize_model_name(model_name):
     return model_name.replace("-", "_")
 
-def search_embeddings(query, model_name, top_k=3):
+def search_embeddings(query, model_name, top_k=5):
     model_field = f"embedding_{sanitize_model_name(model_name)}"
     query_embedding = get_embedding(query, model_name)
 
