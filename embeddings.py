@@ -16,7 +16,7 @@ def get_embedding(text: str, model_name="all-MiniLM-L6-v2") -> list:
         embedding = model.encode(text)
         return embedding.tolist()
     else:
-        raise ValueError(f"Model {model_name} is not recognized!")
+        raise ValueError(f"Model {model_name} not recognized")
     
 def benchmark_embedding(text: str, model_name: str):
     """Benchmark embedding generation for speed & memory usage."""

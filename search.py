@@ -5,6 +5,7 @@ import numpy as np
 import ollama
 from redis.commands.search.query import Query
 from redis.commands.search.field import VectorField, TextField
+import redis
 
 
 # Initialize models
