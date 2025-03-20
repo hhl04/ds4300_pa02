@@ -36,7 +36,11 @@ def benchmark_embedding(text: str, model_name: str):
     }
 
 # FOR TESTING
-sample_text = "This is a test sentence for embedding benchmarking."
-for model in EMBEDDING_MODELS.keys():
-    result = benchmark_embedding(sample_text, model)
-    print(f"{result}")
+# sample_text = "This is a test sentence for embedding benchmarking."
+# for model in EMBEDDING_MODELS.keys():
+#     #result = benchmark_embedding(sample_text, model)
+#     print(model)
+#     r = get_embedding(sample_text, model)
+#     print(r)
+#     print()
+#     #print(f"{result}")

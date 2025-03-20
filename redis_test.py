@@ -17,13 +17,17 @@ MODEL_DIMS = {
     "all-MiniLM-L6-v2": 384,          
     "all-mpnet-base-v2": 768,         
     "InstructorXL": 768,              
-    "ollama-nomic": 1536,             
+    "ollama-nomic": 768,             
 }
 
 #VECTOR_DIM = 768
 INDEX_NAME = "embedding_index"
 DOC_PREFIX = "doc:"
 DISTANCE_METRIC = "COSINE"
+
+def sanitize_model_name(model_name):
+    return model_name.replace("-", "_")
+
 
 
 # used to clear the redis vector store
@@ -42,6 +46,7 @@ def create_hnsw_index():
 
     schema = "text TEXT"
     for model_name, dim in MODEL_DIMS.items():
+        model_name = sanitize_model_name(model_name)
         schema += f" embedding_{model_name} VECTOR HNSW 6 DIM {dim} TYPE FLOAT32 DISTANCE_METRIC {DISTANCE_METRIC}"
 
     redis_client.execute_command(
@@ -52,8 +57,6 @@ def create_hnsw_index():
     )
     print("Index created successfully.")
 
-def sanitize_model_name(model_name: str):
-    return model_name.replace("-", "_")
 
 # store the embedding in Redis
 def store_embedding(file: str, page: str, chunk: str, embeddings: dict):
@@ -62,7 +65,6 @@ def store_embedding(file: str, page: str, chunk: str, embeddings: dict):
         "file": file,
         "page": page,
         "chunk": chunk,
-        #"text": chunk,  # Added 'text' to satisfy index schema
     }
     for model_name, embedding in embeddings.items():
         field_name = f"embedding_{sanitize_model_name(model_name)}"
@@ -91,7 +93,7 @@ def run_ingestion(data_dir):
         store_embedding(
             file=file,
             page=str(page),
-            chunk=f"chunk_{chunk_index}_cs{chunk_size}_ov{overlap}",
+            chunk=f"file_{file}_cs{chunk_size}_ov{overlap}",
             embeddings=embeddings,
         )
 
@@ -101,7 +103,8 @@ def query_redis(query_text: str, model_name: str):
     q = (
         Query(f"*=>[KNN 5 @{field} $vec AS vector_distance]")
         .sort_by("vector_distance")
-        .return_fields("file", "page", "chunk", "vector_distance AS vector_distance")
+        .return_fields("file", "page", "chunk", "vector_distance")
+        #.return_fields("id","vector_distance")
         .dialect(2)
     )
 
@@ -110,17 +113,22 @@ def query_redis(query_text: str, model_name: str):
         q, query_params={"vec": np.array(embedding, dtype=np.float32).tobytes()}
     )
 
+    if not res.docs:
+            print("⚠️ No matches found for your query.")
+            return
+
+    print(f"✅ Found {len(res.docs)} result(s):")
     for doc in res.docs:
-        print(f"{doc.id} | {getattr(doc, 'vector_distance', 'N/A')} | Chunk: {doc.chunk}")
+        print(f"{doc.id} | Distance: {doc.vector_distance} | File: {doc.file} | Chunk: {doc.chunk}")
 
 
 
 # TESTING
 if __name__ == "__main__":
-    # clear_redis_store()
-    # create_hnsw_index()
-    # run_ingestion("/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs/")
-    # print("✅ Ingestion completed!")
+    clear_redis_store()
+    create_hnsw_index()
+    run_ingestion("/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs/")
+    print("✅ Ingestion completed!")
 
-    # Optionally test a query right away
-    query_redis("MongoDB is Cool!",model_name="all-mpnet-base-v2")
+    query_redis("MongoDB is a document database", model_name="all-MiniLM-L6-v2")
+    
