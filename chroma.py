@@ -5,12 +5,12 @@ from chromadb.utils import embedding_functions
 import ollama
 import numpy as np
 import os
-import fitz
+#import fitz
 import re
 
-# embeddings_wrapper.py (or inline in your code)
-
-from embeddings import get_embedding  # Import from your existing file
+# Import specific functions from process_docs.py
+from process_docs import process_pdfs, extract_clean_pdf, split_text_into_chunks, split_text_variants, preprocess_text
+from embeddings import get_embedding, benchmark_embedding  # Import from embeddings.py
 
 class MyChromaEmbeddingFunction:
     def __init__(self, model_name="all-MiniLM-L6-v2"):
@@ -45,94 +45,102 @@ collection = client.get_or_create_collection(
     embedding_function=my_embedding_fn
 )
 
-#TEXT PREP STRATEGY
-def extract_clean_pdf(pdf_path):
-    """Extract and clean text from a PDF file."""
-    doc = fitz.open(pdf_path)
-    cleaned_text = []
+def add_documents_to_chroma(chunks):
+    """
+    Add processed document chunks to ChromaDB collection.
     
-    for page_num, page in enumerate(doc):
-        text = page.get_text("text")
-        
-        # Remove page numbers (assumes standalone numbers at the end of text)
-        text = re.sub(r'\n\d+\n?$', '', text)
-        
-        # Replace special bullets and weird symbols
-        text = text.replace("●", "-").replace("■", "-").replace("○", "-")
-        
-        # Remove unnecessary multiple newlines while keeping paragraph breaks
-        text = re.sub(r'\n{2,}', '\n\n', text) 
-        text = re.sub(r'\n+', ' ', text) 
-        
-        # Remove double spaces
-        text = re.sub(r' +', ' ', text)
-
-        # Fix encoding issues
-        text = text.encode('utf-8', 'ignore').decode('utf-8')
-
-        # Trim leading/trailing spaces
-        cleaned_text.append(text.strip())  
+    Args:
+        chunks: List of chunk dictionaries from process_pdfs()
+    """
+    if not chunks:
+        print("No chunks to add to the collection")
+        return
     
-    return cleaned_text
+    # Prepare the data for ChromaDB format
+    ids = []
+    documents = []
+    metadatas = []
+    
+    for i, chunk in enumerate(chunks):
+        chunk_id = f"chunk_{i}_{chunk['file']}_{chunk['page']}_{chunk['chunk_index']}"
+        ids.append(chunk_id)
+        documents.append(chunk['chunk'])
+        metadatas.append({
+            "file": chunk['file'],
+            "page": chunk['page'],
+            "chunk_size": chunk['chunk_size'],
+            "overlap": chunk['overlap'],
+            "chunk_index": chunk['chunk_index']
+        })
+    
+    # Add data to collection in batches (to avoid potential size limitations)
+    batch_size = 100
+    for i in range(0, len(ids), batch_size):
+        batch_end = min(i + batch_size, len(ids))
+        collection.add(
+            ids=ids[i:batch_end],
+            documents=documents[i:batch_end],
+            metadatas=metadatas[i:batch_end]
+        )
+    
+    print(f"Added {len(ids)} chunks to ChromaDB collection")
 
-# split the text into chunks with overlap
-# CHUNK SIZE and OVERLAP
-def split_text_into_chunks(text, chunk_size=300, overlap=50):
-    """Split text into chunks of approximately chunk_size words with overlap."""
-    words = text.split()
-    chunks = []
-    for i in range(0, len(words), chunk_size - overlap):
-        chunk = " ".join(words[i : i + chunk_size])
-        chunks.append(chunk)
-    return chunks
-
-
-# Process all PDF files in a given directory
-def process_pdfs(data_dir):
-
-    for file_name in os.listdir(data_dir):
-        if file_name.endswith(".pdf"):
-            pdf_path = os.path.join(data_dir, file_name)
-            
-            #text_by_page = extract_text_from_pdf(pdf_path)
-            text_by_page = extract_clean_pdf(pdf_path)
-
-            for page_num, text in text_by_page:
-                chunks = split_text_into_chunks(text)
-                # print(f"  Chunks: {chunks}")
-                for chunk_index, chunk in enumerate(chunks):
-                    # embedding = calculate_embedding(chunk)
-
-                    '''
-                    embedding = get_embedding(chunk)
-                    store_embedding(
-                        file=file_name,
-                        page=str(page_num),
-                        # chunk=str(chunk_index),
-                        chunk=str(chunk),
-                        embedding=embedding,
-                    )
-                    '''
-
-                    collection.add(
-                        documents=[chunk],
-                        metadatas=[{"source": pdf_path, "chunk_index": i}],
-                        ids=[f"foundations-pdf-chunk-{i}"]
-                    )
-
-            print(f" -----> Processed {file_name}")
-
-            #print(f"Added {len(chunks)} chunks to collection '{collection_name}'.")
+def query_collection(query_text, n_results=3):
+    """
+    Query the ChromaDB collection with a string question.
+    
+    Args:
+        query_text: The question or query text
+        n_results: Number of results to return (default: 3)
+    
+    Returns:
+        The query results from ChromaDB
+    """
+    processed_query = preprocess_text(query_text, strategy='standard')
+    
+    query_results = collection.query(
+        query_texts=[processed_query],
+        n_results=n_results
+    )
+    
+    return query_results
 
 def main():
-    #REPLACE WITH YOUR DIRECTORY
-    process_pdfs("/Users/huytuonghoangle/Documents/GitHub/ds4300_pa02/ds4300 docs")
-
-    query_results = collection.query(
-        query_texts=["What is the capital of France?"],
-        n_results=3
-    )
-    print(query_results)    
+    # Process PDFs and get chunks
+    pdf_dir = "/Users/huytuonghoangle/Documents/GitHub/ds4300_pa02/ds4300 docs"
+    print(f"Processing PDFs from {pdf_dir}...")
+    chunks = process_pdfs(pdf_dir)
+    
+    # Add chunks to ChromaDB
+    print("Adding chunks to ChromaDB...")
+    add_documents_to_chroma(chunks)
+    
+    # Example query
+    example_query = "What are the benefits of using MongoDB?"
+    print(f"\nQuerying: '{example_query}'")
+    results = query_collection(example_query, n_results=3)
+    
+    # Display results nicely
+    print("\nResults:")
+    for i, (doc, metadata) in enumerate(zip(results['documents'][0], results['metadatas'][0])):
+        print(f"\n--- Result {i+1} ---")
+        print(f"Source: {metadata['file']}, Page: {metadata['page']}")
+        print(f"Chunk: {doc[:200]}...")  # Show first 200 chars
+    
+    # Interactive query mode
+    while True:
+        user_query = input("\nEnter a query (or 'exit' to quit): ")
+        if user_query.lower() == 'exit':
+            break
+        
+        results = query_collection(user_query)
+        
+        # Display results
+        print("\nResults:")
+        for i, (doc, metadata) in enumerate(zip(results['documents'][0], results['metadatas'][0])):
+            print(f"\n--- Result {i+1} ---")
+            print(f"Source: {metadata['file']}, Page: {metadata['page']}")
+            print(f"Chunk: {doc[:200]}...")  # Show first 200 chars
 
 if __name__ == "__main__":
     main()
