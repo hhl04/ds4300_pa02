@@ -8,6 +8,22 @@ import os
 import fitz
 import re
 
+# embeddings_wrapper.py (or inline in your code)
+
+from embeddings import get_embedding  # Import from your existing file
+
+class MyChromaEmbeddingFunction:
+    def __init__(self, model_name="all-MiniLM-L6-v2"):
+        self.model_name = model_name
+
+    def __call__(self, texts):
+        """
+        Chroma will pass in a list of strings (texts),
+        and expects a list of embeddings (list of float lists) back.
+        """
+        return [get_embedding(t, self.model_name) for t in texts]
+
+
 # Initialize Chroma connection
 chroma_client = chromadb.HttpClient(host='localhost', port=8000)
 chroma_client.heartbeat()
@@ -20,24 +36,14 @@ client = chromadb.Client(
     )
 )
 
-# Use a local SentenceTransformer as the embedding function
-embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"  # or another sentence-transformers model
-)
-
-collection_name = "midterm_study_guide"
+# use the get_embedding function from embeddings.py
+my_embedding_fn = MyChromaEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 
 # Create (or get if it already exists) the collection
 collection = client.get_or_create_collection(
-    name=collection_name,
-    embedding_function=embedding_fn
+    name="midterm_study_guide",
+    embedding_function=my_embedding_fn
 )
-
-# Generate an embedding using nomic-embed-text
-def get_embedding(text: str, model: str = "nomic-embed-text") -> list:
-
-    response = ollama.embeddings(model=model, prompt=text)
-    return response["embedding"]
 
 #TEXT PREP STRATEGY
 def extract_clean_pdf(pdf_path):
