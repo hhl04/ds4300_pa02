@@ -60,9 +60,17 @@ def split_text_into_chunks(text, chunk_size=300, overlap=50):
         chunks.append(chunk)
     return chunks
 
+def sanitize_collection_name(name):
+    """Convert model name to valid Milvus collection name (only letters, numbers, underscores)"""
+    # Replace hyphens and other invalid characters with underscores
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    return sanitized
+
 def create_collection(model_name):
     """Create a Milvus collection for a specific embedding model"""
-    collection_name = f"documents_{model_name}"
+    # Sanitize collection name to comply with Milvus naming rules
+    sanitized_model_name = sanitize_collection_name(model_name)
+    collection_name = f"documents_{sanitized_model_name}"
     
     # Skip if collection already exists
     if utility.has_collection(collection_name):

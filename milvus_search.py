@@ -1,6 +1,7 @@
 from pymilvus import connections, Collection
 import numpy as np
 import ollama
+import re
 from config import EMBEDDING_MODELS
 
 # Initialize Milvus client with Docker connection parameters
@@ -13,6 +14,12 @@ VECTOR_DIMS = {
     "all-mpnet-base-v2": 768,
     "InstructorXL": 768
 }
+
+def sanitize_collection_name(name):
+    """Convert model name to valid Milvus collection name (only letters, numbers, underscores)"""
+    # Replace hyphens and other invalid characters with underscores
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    return sanitized
 
 def get_embedding(text: str, model_name: str) -> list:
     if model_name not in EMBEDDING_MODELS:
@@ -29,7 +36,9 @@ def get_embedding(text: str, model_name: str) -> list:
 
 
 def search_embeddings(query: str, model_name: str, top_k=3):
-    collection_name = f"documents_{model_name}"
+    # Sanitize collection name to match what was used during creation
+    sanitized_model_name = sanitize_collection_name(model_name)
+    collection_name = f"documents_{sanitized_model_name}"
     query_embedding = get_embedding(query, model_name)
     
     try:
