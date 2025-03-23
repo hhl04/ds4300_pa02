@@ -9,7 +9,7 @@ import os
 import re
 
 # Import specific functions from process_docs.py
-from process_docs import process_pdfs, extract_clean_pdf, split_text_into_chunks, split_text_variants, preprocess_text
+from redis_process_docs import process_pdfs, extract_clean_pdf, split_text_into_chunks, split_text_variants, preprocess_text
 from embeddings import get_embedding, benchmark_embedding  # Import from embeddings.py
 
 class MyChromaEmbeddingFunction:

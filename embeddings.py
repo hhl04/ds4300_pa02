@@ -1,43 +1,69 @@
 from sentence_transformers import SentenceTransformer
-import time
-import tracemalloc
-import numpy as np
-from config import EMBEDDING_MODELS  
+import ollama
+from config import EMBEDDING_MODELS
 
+# Initialize models
+models = {}
+for model_name in EMBEDDING_MODELS.keys():
+    if model_name == "nomic-embed-text":
+        # Ollama model doesn't need pre-loading
+        models[model_name] = None
+    else:
+        try:
+            models[model_name] = SentenceTransformer(model_name)
+        except Exception as e:
+            print(f"Error loading model {model_name}: {e}")
+            models[model_name] = None
 
 def get_embedding(text: str, model_name: str) -> list:
-    """Generate embeddings using the specified model and ensure the correct dimension."""
-    if model_name in EMBEDDING_MODELS:
-        model, expected_dim = EMBEDDING_MODELS[model_name] 
-        embedding = model.encode(text).tolist()
-        
-        if len(embedding) != expected_dim:
-            raise ValueError(f"Error: Generated vector dimension is {len(embedding)}, expected {expected_dim} for {model_name}.")
-
-        return embedding
+    """Get embedding vector for text"""
+    if model_name not in models:
+        raise ValueError(f"Model {model_name} not found")
+    
+    if model_name == "nomic-embed-text":
+        # Use Ollama for embedding
+        try:
+            response = ollama.embeddings(model=model_name, prompt=text)
+            return response["embedding"]
+        except Exception as e:
+            print(f"Error getting embedding from Ollama: {e}")
+            return None
     else:
-        raise ValueError(f"Model {model_name} is not recognized!")
+        # Use SentenceTransformer for embedding
+        try:
+            model = models[model_name]
+            if model is None:
+                raise ValueError(f"Model {model_name} not properly initialized")
+            return model.encode(text).tolist()
+        except Exception as e:
+            print(f"Error getting embedding from {model_name}: {e}")
+            return None
 
-def benchmark_embedding(text: str, model_name: str):
-    """Benchmark embedding generation for speed & memory usage."""
-    tracemalloc.start()
+def benchmark_embedding(text: str, model_name: str) -> dict:
+    """Benchmark embedding model performance"""
+    import time
+    
     start_time = time.time()
-
     embedding = get_embedding(text, model_name)
-
-    elapsed_time = time.time() - start_time
-    current, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-
+    end_time = time.time()
+    
+    if embedding is None:
+        return {
+            "success": False,
+            "error": f"Failed to get embedding from {model_name}"
+        }
+    
     return {
-        "model": model_name,
-        "vector_dim": len(embedding),  
-        "time_sec": elapsed_time,
-        "peak_memory_mb": peak / (1024 * 1024)
+        "success": True,
+        "time_taken": end_time - start_time,
+        "embedding_dimension": len(embedding)
     }
 
-# FOR TESTING
-sample_text = "This is a test sentence for embedding benchmarking."
-for model in EMBEDDING_MODELS.keys():
-    result = benchmark_embedding(sample_text, model)
-    print(f"{result}")  
+if __name__ == "__main__":
+    # Test code
+    sample_text = "This is a test sentence for embedding benchmarking."
+    
+    for model_name in EMBEDDING_MODELS.keys():
+        print(f"\nTesting model: {model_name}")
+        result = benchmark_embedding(sample_text, model_name)
+        print(f"Result: {result}")  
