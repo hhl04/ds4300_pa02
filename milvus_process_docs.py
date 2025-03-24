@@ -62,7 +62,8 @@ def split_text_into_chunks(text, chunk_size=300, overlap=50):
 
 def create_collection(model_name):
     """Create a Milvus collection for a specific embedding model"""
-    collection_name = f"documents_{model_name}"
+    safe_model_name = model_name.replace("-", "_")
+    collection_name = f"documents_{safe_model_name}"
     
     # Skip if collection already exists
     if utility.has_collection(collection_name):
@@ -100,6 +101,7 @@ def process_pdfs(data_dir):
     # Create collections for each model
     collections = {}
     for model_name in EMBEDDING_MODELS:
+        safe_model_name = model_name.replace("-", "_")
         collections[model_name] = create_collection(model_name)
 
     for file_name in os.listdir(data_dir):

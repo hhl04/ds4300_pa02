@@ -1,0 +1,4 @@
+standalone.bat
+user.yaml
+embedEtcd.yaml
+volumes/

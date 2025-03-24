@@ -29,7 +29,9 @@ def get_embedding(text: str, model_name: str) -> list:
 
 
 def search_embeddings(query: str, model_name: str, top_k=3):
-    collection_name = f"documents_{model_name}"
+    safe_model_name = model_name.replace("-", "_")
+    collection_name = f"documents_{safe_model_name}"
+
     query_embedding = get_embedding(query, model_name)
     
     try:
@@ -58,14 +60,14 @@ def search_embeddings(query: str, model_name: str, top_k=3):
         if results and len(results) > 0:
             for hits in results:
                 for hit in hits:
-                    entity = hit.entity
                     top_results.append({
-                        "model": entity.get("model", model_name),
-                        "file": entity.get("file", "Unknown"),
-                        "page": entity.get("page", "Unknown"),
-                        "chunk": entity.get("text", ""),
-                        "similarity": hit.score  # Milvus returns similarity score directly
-                    })
+                    "model": hit.get("model") or model_name,
+                    "file": hit.get("file") or "Unknown",
+                    "page": hit.get("page") or "Unknown",
+                    "chunk": hit.get("text") or "",
+                    "similarity": hit.score
+                  })
+
         
         return top_results
 
