@@ -123,7 +123,7 @@ from embeddings import get_embedding, benchmark_embedding
 
 redis_client = redis.StrictRedis(host='localhost', port=6379, decode_responses=True)
 
-def extract_clean_pdf(pdf_path,remove_pgnum=True, remove_sbullets=True, clean_formatting=True, remove_whitespace=True, remove_punct=True):
+def extract_clean_pdf(pdf_path,remove_pgnum=True, remove_sbullets=True, clean_formatting=True, remove_whitespace=True, remove_punct=False):
     """Extract and clean text from a PDF file."""
     doc = fitz.open(pdf_path)
     cleaned_text = []
@@ -163,28 +163,87 @@ def extract_clean_pdf(pdf_path,remove_pgnum=True, remove_sbullets=True, clean_fo
     return cleaned_text
 
 
-# split the text into chunks with overlap
+# # split the text into chunks with overlap
+# def split_text_into_chunks(text, chunk_size=300, overlap=50):
+#     """Split text into chunks of approximately chunk_size words with overlap."""
+#     words = text.split()
+#     chunks = []
+#     for i in range(0, len(words), chunk_size - overlap):
+#         chunk = " ".join(words[i : i + chunk_size])
+#         chunks.append(chunk)
+#     return chunks
+
 def split_text_into_chunks(text, chunk_size=300, overlap=50):
     """Split text into chunks of approximately chunk_size words with overlap."""
     words = text.split()
     chunks = []
     for i in range(0, len(words), chunk_size - overlap):
         chunk = " ".join(words[i : i + chunk_size])
-        chunks.append(chunk)
+        chunks.append({
+            "chunk": chunk,
+            "chunk_size": chunk_size,
+            "overlap": overlap,
+            "start_idx": i,  # Optional: can help debug or inspect token ranges
+            "end_idx": min(i + chunk_size, len(words))
+        })
     return chunks
 
-# Create multiple text chuncks, with varying sizes and overlaps
-def split_text_variants(text, chunk_sizes=[200, 500, 1000], overlaps=[0, 50, 100]):
+# # Create multiple text chuncks, with varying sizes and overlaps
+# def split_text_variants(text, chunk_sizes=[200, 500, 1000], overlaps=[0, 50, 100]):
+#     split_variants = []
+#     for chunk_size in chunk_sizes:
+#         for overlap in overlaps:
+#             chunks = split_text_into_chunks(text, chunk_size=chunk_size, overlap=overlap)
+#             split_variants.append((chunk_size, overlap, chunks))
+    # return split_variants
+
+def split_text_variants(text, file_name, page_num, chunk_sizes=[200, 500, 1000], overlaps=[0, 50, 100]):
     split_variants = []
     for chunk_size in chunk_sizes:
         for overlap in overlaps:
             chunks = split_text_into_chunks(text, chunk_size=chunk_size, overlap=overlap)
-            split_variants.append((chunk_size, overlap, chunks))
+            for chunk_index, chunk in enumerate(chunks):
+                split_variants.append({
+                    "file": file_name,
+                    "page": page_num,
+                    "chunk": chunk,
+                    "chunk_index": chunk_index,
+                    "chunk_size": chunk_size,
+                    "overlap": overlap
+                })
     return split_variants
+
+# def process_pdfs(data_dir):
+#     all_chunks = []
+
+#     for file_name in os.listdir(data_dir):
+#         if file_name.endswith(".pdf"):
+#             pdf_path = os.path.join(data_dir, file_name)
+#             cleaned_pages = extract_clean_pdf(pdf_path)
+
+#             for page_num, text in enumerate(cleaned_pages):
+#                 split_variants = split_text_variants(
+#                     text, 
+#                     chunk_sizes=CHUNK_SIZES, 
+#                     overlaps=OVERLAPS
+#                 )
+
+#                 for chunk_size, overlap, chunks in split_variants:
+#                     for chunk_index, chunk in enumerate(chunks):
+#                         all_chunks.append({
+#                             "file": file_name,
+#                             "page": page_num,
+#                             "chunk": chunk,
+#                             "chunk_index": chunk_index,
+#                             "chunk_size": chunk_size,
+#                             "overlap": overlap
+#                         })
+#             print(f"Finished processing {file_name}")
+
+#     return all_chunks
 
 def process_pdfs(data_dir):
     all_chunks = []
-
     for file_name in os.listdir(data_dir):
         if file_name.endswith(".pdf"):
             pdf_path = os.path.join(data_dir, file_name)
@@ -193,23 +252,17 @@ def process_pdfs(data_dir):
             for page_num, text in enumerate(cleaned_pages):
                 split_variants = split_text_variants(
                     text, 
+                    file_name=file_name,
+                    page_num=page_num,
                     chunk_sizes=CHUNK_SIZES, 
                     overlaps=OVERLAPS
                 )
+                all_chunks.extend(split_variants)
 
-                for chunk_size, overlap, chunks in split_variants:
-                    for chunk_index, chunk in enumerate(chunks):
-                        all_chunks.append({
-                            "file": file_name,
-                            "page": page_num,
-                            "chunk": chunk,
-                            "chunk_index": chunk_index,
-                            "chunk_size": chunk_size,
-                            "overlap": overlap
-                        })
             print(f"Finished processing {file_name}")
 
     return all_chunks
+
 
 def create_vector_index():
     """
@@ -234,30 +287,30 @@ def create_vector_index():
 # TESTING 
 if __name__ == "__main__":
     
-    create_vector_index()
+    # create_vector_index()
 
     print("\n Testing extract_clean_pdf()")
-    test_pdf = "./ds4300 docs/08 - PyMongo.pdf"
-    clean_pdf = extract_clean_pdf(test_pdf)
+    test_pdf = "./ds4300 docs/Document_DBs_&_MongoDB_Study_Guide.pdf"
+    clean_pdf = extract_clean_pdf(test_pdf, remove_punct=False)
     print(clean_pdf)
 
-    # Test split_text_into_chunks
-    dummy_text = "This is a simple test sentence to verify that text chunking works as expected. " * 10
+    # # Test split_text_into_chunks
+    # dummy_text = "This is a simple test sentence to verify that text chunking works as expected. " * 10
 
-    print("\n Testing split_text_into_chunks()")
-    chunks = split_text_into_chunks(dummy_text, chunk_size=10, overlap=2)
-    for i, chunk in enumerate(chunks):
-        print(f"Chunk {i}: {chunk}")
+    # print("\n Testing split_text_into_chunks()")
+    # chunks = split_text_into_chunks(dummy_text, chunk_size=10, overlap=2)
+    # for i, chunk in enumerate(chunks):
+    #     print(f"Chunk {i}: {chunk}")
 
-    # Test split_text_variants
-    print("\nTesting split_text_variants()...")
-    variants = split_text_variants(dummy_text, chunk_sizes=[10, 20], overlaps=[0, 5])
-    for chunk_size, overlap, chunks in variants:
-        print(f"\n--- Variant (size={chunk_size}, overlap={overlap}) ---")
-        for i, chunk in enumerate(chunks):
-            print(f"Chunk {i}: {chunk}")
+    # # Test split_text_variants
+    # print("\nTesting split_text_variants()...")
+    # variants = split_text_variants(dummy_text, chunk_sizes=[10, 20], overlaps=[0, 5])
+    # for chunk_size, overlap, chunks in variants:
+    #     print(f"\n--- Variant (size={chunk_size}, overlap={overlap}) ---")
+    #     for i, chunk in enumerate(chunks):
+    #         print(f"Chunk {i}: {chunk}")
 
     # Test process_pdfs()
-    print('\nTesting process_pdfs()')
-    test_dir = "./ds4300 docs"
-    process_pdfs(test_dir)
+    # print('\nTesting process_pdfs()')
+    # test_dir = "./ds4300 docs"
+    # process_pdfs(test_dir)

@@ -8,6 +8,8 @@ import ollama
 
 def get_embedding(text: str, model_name="all-MiniLM-L6-v2") -> list:
     """Get embedding for a chunk of text using specified model."""
+    text = str(text)
+    
     if model_name == "ollama-nomic":
         response = ollama.embeddings(model="nomic-embed-text", prompt=text)
         return response["embedding"]
