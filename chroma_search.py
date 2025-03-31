@@ -1,10 +1,12 @@
 import chromadb
+from chromadb.config import Settings
 import numpy as np
 import ollama
 from config import EMBEDDING_MODELS
+from embeddings import get_embedding
 
-# Initialize ChromaDB client with Docker connection parameters
-chroma_client = chromadb.HttpClient(host="localhost", port=8000)
+# Initialize ChromaDB client
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
 
 # Define vector dimensions for each model
 VECTOR_DIMS = {
@@ -13,19 +15,22 @@ VECTOR_DIMS = {
     "InstructorXL": 768
 }
 
-def get_embedding(text: str, model_name: str) -> list:
-    if model_name not in EMBEDDING_MODELS:
-        raise ValueError(f"❌ Model {model_name} is not recognized!")
-
-    model, expected_dim = EMBEDDING_MODELS[model_name]
-    embedding = model.encode(text).tolist()
-
-    # Ensure correct embedding dimension
-    if len(embedding) != expected_dim:
-        raise ValueError(f"❌ Error: Generated {len(embedding)} dimensions, expected {expected_dim} for {model_name}!")
-
-    return embedding
-
+def search_documents(query_text, model_name="all-MiniLM-L6-v2", n_results=5):
+    """Search for similar documents using the specified model"""
+    # Get the collection for the specified model
+    collection = chroma_client.get_collection(name=f"documents_{model_name}")
+    
+    # Get query embedding
+    query_embedding = get_embedding(query_text, model_name)
+    
+    # Search the collection
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=n_results,
+        include=["documents", "metadatas", "distances"]
+    )
+    
+    return results
 
 def search_embeddings(query: str, model_name: str, top_k=3):
     collection_name = f"documents_{model_name}"
@@ -123,6 +128,9 @@ def interactive_search():
 
 if __name__ == "__main__":
     interactive_search()
+
+
+
 
 
 

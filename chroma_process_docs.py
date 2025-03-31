@@ -7,10 +7,12 @@ import re
 #from redis_client import store_embedding
 from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS, VECTOR_INDEXES
 from embeddings import get_embedding
+from chromadb.config import Settings
 
-# Initialize ChromaDB client with Docker connection parameters
-# Default ChromaDB server typically runs on port 8000 in Docker
-chroma_client = chromadb.HttpClient(host="localhost", port=8000)
+# Initialize ChromaDB client in local mode
+chroma_client = chromadb.PersistentClient(
+    path="./chroma_db"
+)
 
 def extract_clean_pdf(pdf_path, remove_pgnum=True, remove_sbullets=True, clean_formatting=True, remove_whitespace=True, remove_punct=True):
     """Extract text from a PDF file and return a dictionary {page_number: cleaned_text}"""
