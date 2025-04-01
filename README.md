@@ -6,7 +6,8 @@ This repository provides a comprehensive framework to process documents, generat
 
 ```
 .
-├── config.py                    # Shared configuration for all systems
+├── ds4300 docs                 # folder of lecture 1 to lecture 10; can be replaced with any document.
+├── config.py                   # Shared configuration for all systems
 ├── embeddings.py               # Embedding logic using HuggingFace model
 ├── extract_all_pdfs.py         # PDF extraction utility
 ├── chroma_process_docs.py      # Process and store docs in Chroma
@@ -26,6 +27,11 @@ This repository provides a comprehensive framework to process documents, generat
    ```bash
    pip install -r requirements.txt
    ```
+
+   # PDF Handling
+   pip install pymupdf  # deals with PDF parsing
+   # Don't write: pip install fitz — pymupdf already includes fitz
+   # When importing: 'import fitz' is fine
 
 2. **Environment Configuration**  
    Modify `config.py` to configure hostnames, ports, embedding models, and collection/index names for each database.
