@@ -5,7 +5,7 @@ from redis.commands.search.query import Query
 import os
 import fitz
 import re
-from process_docs import process_pdfs
+from redis_process_docs import process_pdfs
 from embeddings import get_embedding, benchmark_embedding
 from config import EMBEDDING_MODELS
 
@@ -28,14 +28,11 @@ DISTANCE_METRIC = "COSINE"
 def sanitize_model_name(model_name):
     return model_name.replace("-", "_")
 
-
-
 # used to clear the redis vector store
 def clear_redis_store():
     print("Clearing existing Redis store...")
     redis_client.flushdb()
     print("Redis store cleared.")
-
 
 # Create an HNSW index in Redis
 def create_hnsw_index():
@@ -56,7 +53,6 @@ def create_hnsw_index():
         """
     )
     print("Index created successfully.")
-
 
 # store the embedding in Redis
 def store_embedding(file: str, page: str, chunk: str, embeddings: dict):
@@ -119,8 +115,6 @@ def query_redis(query_text: str, model_name: str):
     for doc in res.docs:
         print(f"{doc.id} | Distance: {doc.vector_distance} | File: {doc.file} | Chunk: {doc.chunk}")
 
-
-
 # TESTING
 if __name__ == "__main__":
     clear_redis_store()
@@ -129,5 +123,3 @@ if __name__ == "__main__":
     print("Ingestion completed!")
 
     query_redis("MongoDB is a document database", model_name="all-MiniLM-L6-v2")
-    
- 

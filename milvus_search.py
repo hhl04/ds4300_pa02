@@ -1,13 +1,11 @@
-import redis
+from pymilvus import connections, Collection
 import numpy as np
 import ollama
-from redis.commands.search.query import Query
-from config import EMBEDDING_MODELS, VECTOR_INDEXES
+from config import EMBEDDING_MODELS
 
-redis_client = redis.StrictRedis(host="localhost", port=6379, decode_responses=True)
-
-INDEX_384 = "embedding_index_384"  # For MiniLM (384 dimensions)
-INDEX_768 = "embedding_index_768"  # For mpnet-base & InstructorXL (768 dimensions)
+# Initialize Milvus client with Docker connection parameters
+# Default Milvus server typically runs on port 19530 in Docker
+connections.connect("default", host="localhost", port="19530")
 
 # Define vector dimensions for each model
 VECTOR_DIMS = {
@@ -31,37 +29,50 @@ def get_embedding(text: str, model_name: str) -> list:
 
 
 def search_embeddings(query: str, model_name: str, top_k=3):
-    index_name = VECTOR_INDEXES[model_name]
+    safe_model_name = model_name.replace("-", "_")
+    collection_name = f"documents_{safe_model_name}"
+
     query_embedding = get_embedding(query, model_name)
-    query_vector = np.array(query_embedding, dtype=np.float32).tobytes()
-
+    
     try:
-        q = (
-            Query("*=>[KNN {} @embedding $vec AS vector_distance]".format(top_k))
-            .sort_by("vector_distance")
-            .return_fields("text", "vector_distance", "file", "page")
-            .dialect(2)
+        # Get the collection for this model
+        collection = Collection(name=collection_name)
+        collection.load()
+        
+        # Define search parameters
+        search_params = {
+            "metric_type": "COSINE",
+            "params": {"nprobe": 10}
+        }
+        
+        # Query the collection
+        results = collection.search(
+            data=[query_embedding],
+            anns_field="embedding",
+            param=search_params,
+            limit=top_k,
+            output_fields=["text", "file", "page", "model"]
         )
-
-        results = redis_client.ft(index_name).search(q, query_params={"vec": query_vector})
-
+        
         top_results = []
-        for doc in results.docs:
-            doc_dict = doc.__dict__
-            print(f"🔍 Redis returned keys: {doc_dict.keys()}")
+        
+        # Process the results
+        if results and len(results) > 0:
+            for hits in results:
+                for hit in hits:
+                    top_results.append({
+                    "model": hit.get("model") or model_name,
+                    "file": hit.get("file") or "Unknown",
+                    "page": hit.get("page") or "Unknown",
+                    "chunk": hit.get("text") or "",
+                    "similarity": hit.score
+                  })
 
-            top_results.append({
-                "model": model_name,
-                "file": doc_dict.get("file", "Unknown"),
-                "page": doc_dict.get("page", "Unknown"),
-                "chunk": doc_dict.get("text", ""),
-                "similarity": float(doc_dict.get("vector_distance", 0))
-            })
-
+        
         return top_results
 
     except Exception as e:
-        print(f"❌ Search error in {index_name}: {e}")
+        print(f"❌ Search error in {collection_name}: {e}")
         return []
 
 # Search using all models and aggregate results
@@ -71,8 +82,8 @@ def search_with_all_models(query, top_k=3):
         results = search_embeddings(query, model, top_k)
         all_results.extend(results)
 
-    # Sort results by similarity score
-    sorted_results = sorted(all_results, key=lambda x: x["similarity"], reverse=False)
+    # Sort results by similarity score (higher is better with cosine similarity)
+    sorted_results = sorted(all_results, key=lambda x: x["similarity"], reverse=True)
 
     print("\n🔍 **Aggregated Search Results from All Models**:")
     for res in sorted_results[:top_k]:  
@@ -124,11 +135,3 @@ def interactive_search():
 
 if __name__ == "__main__":
     interactive_search()
-
-
-
-
-
-
- 
- 

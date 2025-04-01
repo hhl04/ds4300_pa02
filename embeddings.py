@@ -5,9 +5,10 @@ import numpy as np
 from config import EMBEDDING_MODELS
 import ollama
 
-
 def get_embedding(text: str, model_name="all-MiniLM-L6-v2") -> list:
     """Get embedding for a chunk of text using specified model."""
+    text = str(text)
+    
     if model_name == "ollama-nomic":
         response = ollama.embeddings(model="nomic-embed-text", prompt=text)
         return response["embedding"]
@@ -41,5 +42,3 @@ sample_text = "This is a test sentence for embedding benchmarking."
 for model in EMBEDDING_MODELS.keys():
     result = benchmark_embedding(sample_text, model)
     print(f"{result}")  
-
-
