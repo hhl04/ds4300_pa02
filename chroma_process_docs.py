@@ -1,10 +1,8 @@
-import ollama
 import chromadb
 import numpy as np
 import os
 import fitz
 import re
-#from redis_client import store_embedding
 from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS, VECTOR_INDEXES
 from embeddings import get_embedding
 
@@ -80,8 +78,8 @@ def process_pdfs(data_dir):
                 chunks = split_text_into_chunks(text, chunk_size=300, overlap=50)
 
                 for chunk_index, chunk in enumerate(chunks):
-                    for model_name in EMBEDDING_MODELS:
-                        embedding = get_embedding(chunk, model_name)
+                    for model_name, (model, _) in EMBEDDING_MODELS.items():
+                        embedding = get_embedding(chunk, model_name=model_name, model=model)
                         
                         # Create unique ID for each chunk
                         doc_id = f"doc:{file_name}:page{page_num}:chunk{chunk_index}:{model_name}"

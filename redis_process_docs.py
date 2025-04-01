@@ -1,18 +1,17 @@
-import ollama
-import redis
-import numpy as np
-from redis.commands.search.query import Query
 import os
 import fitz
 import re
-#from redis_client import store_embedding
-from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS
-from embeddings import get_embedding
+from config import CHUNK_SIZES, OVERLAPS
 
-redis_client = redis.StrictRedis(host='localhost', port=6379, decode_responses=True)
-
-def extract_clean_pdf(pdf_path,remove_pgnum=True, remove_sbullets=True, clean_formatting=True, remove_whitespace=True, remove_punct=False):
-    """Extract and clean text from a PDF file."""
+def extract_clean_pdf(
+    pdf_path: str,
+    remove_pgnum=True,
+    remove_sbullets=True,
+    clean_formatting=True,
+    remove_whitespace=True,
+    remove_punct=False
+) -> list:
+    """Extract and clean text from a PDF file, returning a list of cleaned page texts."""
     doc = fitz.open(pdf_path)
     cleaned_text = []
     
@@ -20,26 +19,18 @@ def extract_clean_pdf(pdf_path,remove_pgnum=True, remove_sbullets=True, clean_fo
         text = page.get_text("text")
         
         if remove_pgnum:
-            # Remove page numbers (assumes standalone numbers at the end of text)
-                text = re.sub(r'\n\d+\n?$', '', text)
-        
+            text = re.sub(r'\n\d+\n?$', '', text)
+
         if remove_sbullets:
-            # Replace special bullets and weird symbols
             text = text.replace("●", "-").replace("■", "-").replace("○", "-")
         
         if clean_formatting:
-            # Remove unnecessary multiple newlines while keeping paragraph breaks
             text = re.sub(r'\n{2,}', '\n\n', text) 
             text = re.sub(r'\n+', ' ', text) 
-        
-            # Remove double spaces
             text = re.sub(r' +', ' ', text)
-
-            # Fix encoding issues
             text = text.encode('utf-8', 'ignore').decode('utf-8')
         
         if remove_punct:
-            # Remove punct
             text = re.sub(r'[^\w\s]', '', text)
 
         if remove_whitespace:
@@ -50,7 +41,8 @@ def extract_clean_pdf(pdf_path,remove_pgnum=True, remove_sbullets=True, clean_fo
     
     return cleaned_text
 
-def split_text_into_chunks(text, chunk_size=300, overlap=50):
+
+def split_text_into_chunks(text: str, chunk_size=300, overlap=50) -> list:
     """Split text into chunks of approximately chunk_size words with overlap."""
     words = text.split()
     chunks = []
@@ -60,12 +52,13 @@ def split_text_into_chunks(text, chunk_size=300, overlap=50):
             "chunk": chunk,
             "chunk_size": chunk_size,
             "overlap": overlap,
-            "start_idx": i,  # Optional: can help debug or inspect token ranges
+            "start_idx": i,
             "end_idx": min(i + chunk_size, len(words))
         })
     return chunks
 
-def split_text_variants(text, file_name, page_num, chunk_sizes=[200, 500, 1000], overlaps=[0, 50, 100]):
+
+def split_text_variants(text, file_name, page_num, chunk_sizes=CHUNK_SIZES, overlaps=OVERLAPS) -> list:
     split_variants = []
     for chunk_size in chunk_sizes:
         for overlap in overlaps:
@@ -81,7 +74,8 @@ def split_text_variants(text, file_name, page_num, chunk_sizes=[200, 500, 1000],
                 })
     return split_variants
 
-def process_pdfs(data_dir):
+
+def process_pdfs(data_dir: str, verbose=True) -> list:
     all_chunks = []
     for file_name in os.listdir(data_dir):
         if file_name.endswith(".pdf"):
@@ -92,43 +86,19 @@ def process_pdfs(data_dir):
                 split_variants = split_text_variants(
                     text, 
                     file_name=file_name,
-                    page_num=page_num,
-                    chunk_sizes=CHUNK_SIZES, 
-                    overlaps=OVERLAPS
+                    page_num=page_num
                 )
                 all_chunks.extend(split_variants)
 
-            print(f"Finished processing {file_name}")
+            if verbose:
+                print(f"✅ Finished processing {file_name}")
 
     return all_chunks
 
 
-def create_vector_index():
-    """
-    Checks if the Redis vector index exists; if not, creates it.
-    """
-    try:
-        # Check if the index exists
-        index_info = redis_client.execute_command("FT._LIST")
-        if "embedding_index" not in index_info:
-            redis_client.execute_command(
-                "FT.CREATE embedding_index ON HASH PREFIX 1 doc: "
-                "SCHEMA text TEXT "
-                "embedding VECTOR HNSW 6 DIM 768 TYPE FLOAT32 DISTANCE_METRIC COSINE"
-            )
-            print("Redis vector index created successfully!")
-        else:
-            print("Redis vector index already exists.")
-    except Exception as e:
-        print(f"Error creating vector index: {e}")
-
-
-# TESTING 
+# TESTING
 if __name__ == "__main__":
-    
-    # create_vector_index()
-
-    print("\n Testing extract_clean_pdf()")
+    print("\n🔍 Testing extract_clean_pdf()")
     test_pdf = "./ds4300 docs/Document_DBs_&_MongoDB_Study_Guide.pdf"
     clean_pdf = extract_clean_pdf(test_pdf, remove_punct=False)
     print(clean_pdf)

@@ -5,10 +5,6 @@ from embeddings import get_embedding
 import ollama
 from redis.commands.search.query import Query
 
-# Connect to Redis Stack (fix the port)
-# redis_client = redis.StrictRedis(host="localhost", port=6380, decode_responses=False)
-
-INDEX_NAME = "embedding_index"
 DOC_PREFIX = "doc:"
 DISTANCE_METRIC = "COSINE"
 
@@ -16,14 +12,14 @@ def sanitize_model_name(model_name):
     return model_name.replace("-", "_")
 
 def search_embeddings(query, model_name, top_k=5, chunk_size_filter=None, overlap_filter=None):
-    model_field = f"embedding_{sanitize_model_name(model_name)}"
+    model_field = "embedding"
     query_embedding = get_embedding(query, model_name)
     query_vector = np.array(query_embedding, dtype=np.float32).tobytes()
+    
+    index_name = f"embedding_index_{sanitize_model_name(model_name)}"
 
     try:
-        # Build base filter query
         filters = []
-
         if chunk_size_filter is not None:
             filters.append(f"@chunk_size:[{chunk_size_filter} {chunk_size_filter}]")
         if overlap_filter is not None:
@@ -31,15 +27,15 @@ def search_embeddings(query, model_name, top_k=5, chunk_size_filter=None, overla
 
         filter_query = " ".join(filters) if filters else "*"
 
-        knn_query = (
+        q = (
             Query(f"{filter_query}=>[KNN {top_k} @{model_field} $vec AS vector_distance]")
             .sort_by("vector_distance")
             .return_fields("file", "page", "chunk", "chunk_size", "overlap", "vector_distance")
             .dialect(2)
         )
 
-        results = redis_client.ft(INDEX_NAME).search(
-            knn_query, query_params={"vec": query_vector}
+        results = redis_client.ft(index_name).search(
+            q, query_params={"vec": query_vector}
         )
 
         top_results = [

@@ -1,37 +1,33 @@
 import chromadb
 import numpy as np
 import ollama
-#from config import EMBEDDING_MODELS
-from sentence_transformers import SentenceTransformer
-
-EMBEDDING_MODELS = {
-    "all-MiniLM-L6-v2": (SentenceTransformer("all-MiniLM-L6-v2"), 384),  
-    "all-mpnet-base-v2": (SentenceTransformer("all-mpnet-base-v2"), 768),  
-    "InstructorXL": (SentenceTransformer("hkunlp/instructor-xl"), 768), 
-}
+from config import EMBEDDING_MODELS
 
 # Initialize ChromaDB client with Docker connection parameters
 chroma_client = chromadb.HttpClient(host="localhost", port=8000)
 
-# Define vector dimensions for each model
-VECTOR_DIMS = {
-    "all-MiniLM-L6-v2": 384,
-    "all-mpnet-base-v2": 768,
-    "InstructorXL": 768
-}
-
 def get_embedding(text: str, model_name: str) -> list:
-    if model_name not in EMBEDDING_MODELS:
+    model_config = EMBEDDING_MODELS.get(model_name)
+    
+    if model_config is None:
         raise ValueError(f"❌ Model {model_name} is not recognized!")
 
-    model, expected_dim = EMBEDDING_MODELS[model_name]
-    embedding = model.encode(text).tolist()
+    model, expected_dim = model_config
 
-    # Ensure correct embedding dimension
+    if model_name == "ollama-nomic":
+        # Use Ollama to get embedding
+        response = ollama.embeddings(model=model, prompt=text)
+        embedding = response["embedding"]
+    else:
+        # Use SentenceTransformer
+        embedding = model.encode(text).tolist()
+
     if len(embedding) != expected_dim:
         raise ValueError(f"❌ Error: Generated {len(embedding)} dimensions, expected {expected_dim} for {model_name}!")
 
     return embedding
+
+
 
 
 def search_embeddings(query: str, model_name: str, top_k=3):
@@ -73,16 +69,20 @@ def search_embeddings(query: str, model_name: str, top_k=3):
 # Search using all models and aggregate results
 def search_with_all_models(query, top_k=3):
     all_results = []
-    for model in VECTOR_DIMS.keys():
-        results = search_embeddings(query, model, top_k)
+
+    for model_name in EMBEDDING_MODELS.keys():
+        results = search_embeddings(query, model_name, top_k)
+        # Add model name to each result so we can print it later
+        for res in results:
+            res["model"] = model_name
         all_results.extend(results)
 
     # Sort results by similarity score (higher is better)
     sorted_results = sorted(all_results, key=lambda x: x["similarity"], reverse=True)
 
-    print("\n🔍 **Aggregated Search Results from All Models**:")
-    for res in sorted_results[:top_k]:  
-        print(f"📄 Model: {res['model']} | File: {res['file']}, Page: {res['page']}\n📖 {res['chunk'][:200]}...\n")
+    # print("\n🔍 **Aggregated Search Results from All Models**:")
+    # for res in sorted_results[:top_k]:  
+    #     print(f"📄 Model: {res['model']} | File: {res['file']}, Page: {res['page']}\n📖 {res['chunk'][:200]}...\n")
 
     return sorted_results[:top_k]
 
@@ -96,7 +96,7 @@ def generate_rag_response(query, context_results):
         for res in context_results
     ])
 
-    print(f"📝 **Context passed to LLM:**\n{context_str[:500]}...\n")
+    # print(f"📝 **Context passed to LLM:**\n{context_str[:500]}...\n")
 
     prompt = f"""You are an AI assistant. Use the following context to answer the query.
     If the context is not relevant, say 'I don't know'.
