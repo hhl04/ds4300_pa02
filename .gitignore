@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ChromaDB
+chroma_db/
+volumes/
+
+# Docker
+milvus/
+
+# macOS
+.DS_Store
+
+# Results
+comprehensive_comparison_results.json 
