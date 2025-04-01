@@ -2,21 +2,22 @@ from sentence_transformers import SentenceTransformer
 import time
 import tracemalloc
 import numpy as np
-from config import EMBEDDING_MODELS  
+from config import EMBEDDING_MODELS
+import ollama
 
-
-def get_embedding(text: str, model_name: str) -> list:
-    """Generate embeddings using the specified model and ensure the correct dimension."""
-    if model_name in EMBEDDING_MODELS:
-        model, expected_dim = EMBEDDING_MODELS[model_name] 
-        embedding = model.encode(text).tolist()
-        
-        if len(embedding) != expected_dim:
-            raise ValueError(f"Error: Generated vector dimension is {len(embedding)}, expected {expected_dim} for {model_name}.")
-
-        return embedding
+def get_embedding(text: str, model_name="all-MiniLM-L6-v2") -> list:
+    """Get embedding for a chunk of text using specified model."""
+    text = str(text)
+    
+    if model_name == "ollama-nomic":
+        response = ollama.embeddings(model="nomic-embed-text", prompt=text)
+        return response["embedding"]
+    elif model_name in EMBEDDING_MODELS:
+        model = EMBEDDING_MODELS[model_name]
+        embedding = model.encode(text)
+        return embedding.tolist()
     else:
-        raise ValueError(f"Model {model_name} is not recognized!")
+        raise ValueError(f"Model {model_name} not recognized")
 
 def benchmark_embedding(text: str, model_name: str):
     """Benchmark embedding generation for speed & memory usage."""
