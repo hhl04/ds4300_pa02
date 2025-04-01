@@ -1,32 +1,25 @@
-import ollama
+
 import redis
 import numpy as np
+import ollama
 from redis.commands.search.query import Query
-import os
-import fitz
-import re
 from redis_process_docs import process_pdfs
-from embeddings import get_embedding, benchmark_embedding
+from embeddings import get_embedding
 from config import EMBEDDING_MODELS
+from tqdm import tqdm
 
 # Initialize Redis connection
 redis_client = redis.Redis(host="localhost", port=6380, db=0)
 
-# Define each vector dim
-MODEL_DIMS = {
-    "all-MiniLM-L6-v2": 384,          
-    "all-mpnet-base-v2": 768,         
-    "InstructorXL": 768,              
-    "ollama-nomic": 768,             
-}
-
-#VECTOR_DIM = 768
 INDEX_NAME = "embedding_index"
 DOC_PREFIX = "doc:"
 DISTANCE_METRIC = "COSINE"
 
 def sanitize_model_name(model_name):
     return model_name.replace("-", "_")
+
+def get_vector_field_name(model_name):
+    return f"embedding_{sanitize_model_name(model_name)}"
 
 # used to clear the redis vector store
 def clear_redis_store():
@@ -41,10 +34,10 @@ def create_hnsw_index():
     except redis.exceptions.ResponseError:
         pass
 
-    schema = "text TEXT"
-    for model_name, dim in MODEL_DIMS.items():
-        model_name = sanitize_model_name(model_name)
-        schema += f" embedding_{model_name} VECTOR HNSW 6 DIM {dim} TYPE FLOAT32 DISTANCE_METRIC {DISTANCE_METRIC}"
+    schema = "text TEXT chunk_size NUMERIC overlap NUMERIC"
+    for model_name, (_, dim) in EMBEDDING_MODELS.items():
+        field_name = get_vector_field_name(model_name)
+        schema += f" {field_name} VECTOR HNSW 6 DIM {dim} TYPE FLOAT32 DISTANCE_METRIC {DISTANCE_METRIC}"
 
     redis_client.execute_command(
         f"""
@@ -54,26 +47,29 @@ def create_hnsw_index():
     )
     print("Index created successfully.")
 
+
+
 # store the embedding in Redis
-def store_embedding(file: str, page: str, chunk: str, embeddings: dict):
+def store_embedding(file: str, page: str, chunk: str, chunk_size: int, overlap: int, embeddings: dict):
     key = f"{DOC_PREFIX}:{file}_page_{page}_chunk_{chunk}"
     mapping = {
         "file": file,
         "page": page,
         "chunk": chunk,
+        "chunk_size": chunk_size,
+        "overlap": overlap,
     }
     for model_name, embedding in embeddings.items():
-        field_name = f"embedding_{sanitize_model_name(model_name)}"
+        field_name = get_vector_field_name(model_name)
         mapping[field_name] = np.array(
             embedding, dtype=np.float32
         ).tobytes()
 
     redis_client.hset(key, mapping=mapping)
-    print(f"Stored embeddings for: {chunk}")
 
 def run_ingestion(data_dir):
     chunks = process_pdfs(data_dir)
-    for chunk_data in chunks:
+    for chunk_data in tqdm(chunks, desc="Storing chunks in Redis"):
         chunk = chunk_data["chunk"]
         file = chunk_data["file"]
         page = chunk_data["page"]
@@ -81,19 +77,35 @@ def run_ingestion(data_dir):
         overlap = chunk_data["overlap"]
 
         embeddings = {}
-        for model_name in EMBEDDING_MODELS.keys():
-            embedding = get_embedding(chunk, model_name)
+        for model_name, (model, _) in EMBEDDING_MODELS.items():
+            embedding = get_embedding(chunk, model_name=model_name, model=model)
             embeddings[model_name] = embedding
 
         store_embedding(
             file=file,
             page=str(page),
             chunk=f"file_{file}_cs{chunk_size}_ov{overlap}",
+            chunk_size=chunk_size,
+            overlap=overlap,
             embeddings=embeddings,
         )
 
+def get_embedding(text: str, model_name=None, model=None) -> list:
+    """Get embedding for a chunk of text using specified model."""
+    text = str(text)
+
+    if model_name == "ollama-nomic":
+        response = ollama.embeddings(model="nomic-embed-text", prompt=text)
+        return response["embedding"]
+    elif model:
+        embedding = model.encode(text)
+        return embedding.tolist()
+    else:
+        raise ValueError(f"Model {model_name} not recognized or not passed.")
+
 def query_redis(query_text: str, model_name: str):
-    field = f"embedding_{sanitize_model_name(model_name)}"
+    field = get_vector_field_name(model_name)
+    model, _ = EMBEDDING_MODELS[model_name]
 
     q = (
         Query(f"*=>[KNN 5 @{field} $vec AS vector_distance]")
@@ -102,14 +114,14 @@ def query_redis(query_text: str, model_name: str):
         .dialect(2)
     )
 
-    embedding = get_embedding(query_text, model_name)
+    embedding = get_embedding(query_text, model_name=model_name, model=model)
     res = redis_client.ft(INDEX_NAME).search(
         q, query_params={"vec": np.array(embedding, dtype=np.float32).tobytes()}
     )
 
     if not res.docs:
-            print("No matches found for your query.")
-            return
+        print("No matches found for your query.")
+        return
 
     print(f"Found {len(res.docs)} result(s):")
     for doc in res.docs:
@@ -119,7 +131,5 @@ def query_redis(query_text: str, model_name: str):
 if __name__ == "__main__":
     clear_redis_store()
     create_hnsw_index()
-    run_ingestion("/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300 docs/")
+    run_ingestion("/Users/paulchampagne/Desktop/DS 4300/ds4300_pa02/ds4300_testdocs/")
     print("Ingestion completed!")
-
-    query_redis("MongoDB is a document database", model_name="all-MiniLM-L6-v2")

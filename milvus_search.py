@@ -1,7 +1,14 @@
 from pymilvus import connections, Collection
 import numpy as np
 import ollama
-from config import EMBEDDING_MODELS
+#from config import EMBEDDING_MODELS
+from sentence_transformers import SentenceTransformer
+
+EMBEDDING_MODELS = {
+    "all-MiniLM-L6-v2": (SentenceTransformer("all-MiniLM-L6-v2"), 384),  
+    "all-mpnet-base-v2": (SentenceTransformer("all-mpnet-base-v2"), 768),  
+    "InstructorXL": (SentenceTransformer("hkunlp/instructor-xl"), 768), 
+}
 
 # Initialize Milvus client with Docker connection parameters
 # Default Milvus server typically runs on port 19530 in Docker

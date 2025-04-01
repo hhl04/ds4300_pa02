@@ -1,12 +1,12 @@
-#import redis_client  # assuming this has the redis schema setup etc.
-import redis_test as redis_client
+import redis
+from redis_client import redis_client
 import numpy as np
 from embeddings import get_embedding
 import ollama
 from redis.commands.search.query import Query
 
 # Connect to Redis Stack (fix the port)
-#redis_client = redis.StrictRedis(host="localhost", port=6380, decode_responses=False)
+# redis_client = redis.StrictRedis(host="localhost", port=6380, decode_responses=False)
 
 INDEX_NAME = "embedding_index"
 DOC_PREFIX = "doc:"
@@ -21,29 +21,32 @@ def search_embeddings(query, model_name, top_k=5, chunk_size_filter=None, overla
     query_vector = np.array(query_embedding, dtype=np.float32).tobytes()
 
     try:
-        # Dynamically add filters
-        filter_query = "*"
-        if chunk_size_filter is not None:
-            filter_query += f" @chunk_size:[{chunk_size_filter} {chunk_size_filter}]"
-        if overlap_filter is not None:
-            filter_query += f" @overlap:[{overlap_filter} {overlap_filter}]"
+        # Build base filter query
+        filters = []
 
-        q = (
+        if chunk_size_filter is not None:
+            filters.append(f"@chunk_size:[{chunk_size_filter} {chunk_size_filter}]")
+        if overlap_filter is not None:
+            filters.append(f"@overlap:[{overlap_filter} {overlap_filter}]")
+
+        filter_query = " ".join(filters) if filters else "*"
+
+        knn_query = (
             Query(f"{filter_query}=>[KNN {top_k} @{model_field} $vec AS vector_distance]")
             .sort_by("vector_distance")
             .return_fields("file", "page", "chunk", "chunk_size", "overlap", "vector_distance")
             .dialect(2)
         )
 
-        results = redis_client.redis_client.ft(INDEX_NAME).search(
-            q, query_params={"vec": query_vector}
+        results = redis_client.ft(INDEX_NAME).search(
+            knn_query, query_params={"vec": query_vector}
         )
 
         top_results = [
             {
-                "file": result.file.decode('utf-8'),
+                "file": result.file.decode("utf-8") if isinstance(result.file, bytes) else result.file,
                 "page": result.page,
-                "chunk": result.chunk.decode('utf-8'),
+                "chunk": result.chunk.decode("utf-8") if isinstance(result.chunk, bytes) else result.chunk,
                 "chunk_size": result.chunk_size,
                 "overlap": result.overlap,
                 "similarity": result.vector_distance,
@@ -52,14 +55,18 @@ def search_embeddings(query, model_name, top_k=5, chunk_size_filter=None, overla
         ]
 
         for result in top_results:
-            sim = float(result['similarity'])
-            print(f"---> File: {result['file']}, Page: {result['page']}, Chunk Size: {result['chunk_size']}, Overlap: {result['overlap']}, Sim: {sim:.2f}")
+            sim = float(result["similarity"])
+            print(
+                f"---> File: {result['file']}, Page: {result['page']}, "
+                f"Chunk Size: {result['chunk_size']}, Overlap: {result['overlap']}, Sim: {sim:.2f}"
+            )
 
         return top_results
 
     except Exception as e:
         print(f"Search error: {e}")
         return []
+
 
 def generate_rag_response(query, context_results):
     context_str = "\n".join(

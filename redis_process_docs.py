@@ -7,7 +7,7 @@ import fitz
 import re
 #from redis_client import store_embedding
 from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS
-from embeddings import get_embedding, benchmark_embedding
+from embeddings import get_embedding
 
 redis_client = redis.StrictRedis(host='localhost', port=6379, decode_responses=True)
 

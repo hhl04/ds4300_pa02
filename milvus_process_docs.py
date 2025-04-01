@@ -4,8 +4,15 @@ import os
 import fitz
 import re
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
-from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS, VECTOR_INDEXES
+#from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS, VECTOR_INDEXES
 from embeddings import get_embedding
+from sentence_transformers import SentenceTransformer
+
+EMBEDDING_MODELS = {
+    "all-MiniLM-L6-v2": (SentenceTransformer("all-MiniLM-L6-v2"), 384),  
+    "all-mpnet-base-v2": (SentenceTransformer("all-mpnet-base-v2"), 768),  
+    "InstructorXL": (SentenceTransformer("hkunlp/instructor-xl"), 768), 
+}
 
 # Initialize Milvus client with Docker connection parameters
 # Default Milvus server typically runs on port 19530 in Docker
