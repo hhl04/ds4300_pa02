@@ -3,11 +3,9 @@ import redis
 import numpy as np
 from redis.commands.search.query import Query
 import os
-import fitz
-import re
-from redis_process_docs import process_pdfs
 from embeddings import get_embedding
-from config import EMBEDDING_MODELS
+from config import EMBEDDING_MODELS, CHUNK_SIZES, OVERLAPS
+from preprocessing import extract_clean_pdf, split_text_variants
 from tqdm import tqdm
 
 # Initialize Redis connection
@@ -20,7 +18,7 @@ def sanitize_model_name(model_name):
     return model_name.replace("-", "_")
 
 def get_vector_field_name(model_name):
-    return f"embedding"
+    return "embedding"  # consistent with ingestion logic
 
 # used to clear the redis vector store
 def clear_redis_store():
@@ -63,16 +61,36 @@ def store_embedding(file: str, page: str, chunk: str, chunk_size: int, overlap: 
     }
     redis_client.hset(key, mapping=mapping)
 
-def run_ingestion(data_dir):
-    chunks = process_pdfs(data_dir)
+
+def run_ingestion(data_dir, chunk_size=300, overlap=50):
     for model_name, (model, dim) in EMBEDDING_MODELS.items():
         create_index_for_model(model_name, dim)
-        for chunk_data in tqdm(chunks, desc=f"Storing chunks in Redis for {model_name}"):
+        all_chunks = []
+
+        for file_name in os.listdir(data_dir):
+            if not file_name.endswith(".pdf"):
+                continue
+
+            pdf_path = os.path.join(data_dir, file_name)
+            extracted_pages = extract_clean_pdf(pdf_path)
+
+            for page_num, text in extracted_pages.items():
+                chunks = split_text_variants(
+                    text,
+                    file_name=file_name,
+                    page_num=page_num,
+                    chunk_sizes=[chunk_size],
+                    overlaps=[overlap]
+                )
+                all_chunks.extend(chunks)
+
+        # TQDM now wraps storing phase only
+        for chunk_data in tqdm(all_chunks, desc=f"🔁 Ingesting into Redis ({model_name})"):
             chunk = chunk_data["chunk"]
-            file = chunk_data["file"]
-            page = chunk_data["page"]
             chunk_size = chunk_data["chunk_size"]
             overlap = chunk_data["overlap"]
+            file = chunk_data["file"]
+            page = chunk_data["page"]
 
             embedding = get_embedding(chunk, model_name=model_name, model=model)
 
@@ -85,6 +103,9 @@ def run_ingestion(data_dir):
                 model_name=model_name,
                 embedding=embedding,
             )
+
+        print(f"✅ Finished ingestion for model: {model_name}\n")
+
 
 def query_redis(query_text: str, model_name: str):
     field = get_vector_field_name(model_name)

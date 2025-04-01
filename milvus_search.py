@@ -1,58 +1,43 @@
 from pymilvus import connections, Collection
 import numpy as np
 import ollama
-#from config import EMBEDDING_MODELS
-from sentence_transformers import SentenceTransformer
-
-EMBEDDING_MODELS = {
-    "all-MiniLM-L6-v2": (SentenceTransformer("all-MiniLM-L6-v2"), 384),  
-    "all-mpnet-base-v2": (SentenceTransformer("all-mpnet-base-v2"), 768),  
-    "InstructorXL": (SentenceTransformer("hkunlp/instructor-xl"), 768), 
-}
+from config import EMBEDDING_MODELS
 
 # Initialize Milvus client with Docker connection parameters
-# Default Milvus server typically runs on port 19530 in Docker
 connections.connect("default", host="localhost", port="19530")
-
-# Define vector dimensions for each model
-VECTOR_DIMS = {
-    "all-MiniLM-L6-v2": 384,
-    "all-mpnet-base-v2": 768,
-    "InstructorXL": 768
-}
 
 def get_embedding(text: str, model_name: str) -> list:
     if model_name not in EMBEDDING_MODELS:
         raise ValueError(f"❌ Model {model_name} is not recognized!")
 
     model, expected_dim = EMBEDDING_MODELS[model_name]
-    embedding = model.encode(text).tolist()
 
-    # Ensure correct embedding dimension
+    if model_name == "ollama-nomic":
+        response = ollama.embeddings(model=model, prompt=text)
+        embedding = response["embedding"]
+    else:
+        embedding = model.encode(text).tolist()
+
     if len(embedding) != expected_dim:
         raise ValueError(f"❌ Error: Generated {len(embedding)} dimensions, expected {expected_dim} for {model_name}!")
 
     return embedding
-
 
 def search_embeddings(query: str, model_name: str, top_k=3):
     safe_model_name = model_name.replace("-", "_")
     collection_name = f"documents_{safe_model_name}"
 
     query_embedding = get_embedding(query, model_name)
-    
+
     try:
-        # Get the collection for this model
         collection = Collection(name=collection_name)
         collection.load()
-        
-        # Define search parameters
+
         search_params = {
             "metric_type": "COSINE",
             "params": {"nprobe": 10}
         }
-        
-        # Query the collection
+
         results = collection.search(
             data=[query_embedding],
             anns_field="embedding",
@@ -60,45 +45,39 @@ def search_embeddings(query: str, model_name: str, top_k=3):
             limit=top_k,
             output_fields=["text", "file", "page", "model"]
         )
-        
+
         top_results = []
-        
-        # Process the results
         if results and len(results) > 0:
             for hits in results:
                 for hit in hits:
                     top_results.append({
-                    "model": hit.get("model") or model_name,
-                    "file": hit.get("file") or "Unknown",
-                    "page": hit.get("page") or "Unknown",
-                    "chunk": hit.get("text") or "",
-                    "similarity": hit.score
-                  })
+                        "model": hit.get("model") or model_name,
+                        "file": hit.get("file") or "Unknown",
+                        "page": hit.get("page") or "Unknown",
+                        "chunk": hit.get("text") or "",
+                        "similarity": hit.score
+                    })
 
-        
         return top_results
 
     except Exception as e:
         print(f"❌ Search error in {collection_name}: {e}")
         return []
 
-# Search using all models and aggregate results
 def search_with_all_models(query, top_k=3):
     all_results = []
-    for model in VECTOR_DIMS.keys():
-        results = search_embeddings(query, model, top_k)
+    for model_name in EMBEDDING_MODELS.keys():
+        results = search_embeddings(query, model_name, top_k)
         all_results.extend(results)
 
-    # Sort results by similarity score (higher is better with cosine similarity)
     sorted_results = sorted(all_results, key=lambda x: x["similarity"], reverse=True)
 
     print("\n🔍 **Aggregated Search Results from All Models**:")
-    for res in sorted_results[:top_k]:  
+    for res in sorted_results[:top_k]:
         print(f"📄 Model: {res['model']} | File: {res['file']}, Page: {res['page']}\n📖 {res['chunk'][:200]}...\n")
 
     return sorted_results[:top_k]
 
-# Generate a response using retrieved context
 def generate_rag_response(query, context_results):
     if not context_results:
         return "I don't know. No relevant information found in the database."
@@ -107,8 +86,6 @@ def generate_rag_response(query, context_results):
         f"From {res['file']} (Page {res['page']}, Model: {res['model']}):\n{res['chunk']}"
         for res in context_results
     ])
-
-    print(f"📝 **Context passed to LLM:**\n{context_str[:500]}...\n")
 
     prompt = f"""You are an AI assistant. Use the following context to answer the query.
     If the context is not relevant, say 'I don't know'.
@@ -124,7 +101,6 @@ def generate_rag_response(query, context_results):
 
     return response["message"]["content"]
 
-# Interactive search interface
 def interactive_search():
     print("🔍 **RAG Search Interface**")
     print("Type 'exit' to quit")
@@ -133,9 +109,9 @@ def interactive_search():
         query = input("\nEnter your search query: ")
         if query.lower() == "exit":
             break
-        
+
         context_results = search_with_all_models(query)
-        
+
         response = generate_rag_response(query, context_results)
 
         print("\n--- Response ---\n", response)
