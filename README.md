@@ -28,10 +28,10 @@ This repository provides a comprehensive framework to process documents, generat
    pip install -r requirements.txt
    ```
 
-   # PDF Handling
+   #### PDF Handling
    pip install pymupdf  # deals with PDF parsing
-   # Don't write: pip install fitz — pymupdf already includes fitz
-   # When importing: 'import fitz' is fine
+   #### Don't write: pip install fitz — pymupdf already includes fitz
+   #### When importing: 'import fitz' is fine
 
 2. **Environment Configuration**  
    Modify `config.py` to configure hostnames, ports, embedding models, and collection/index names for each database.
