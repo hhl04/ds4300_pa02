@@ -14,4 +14,4 @@ milvus/
 .DS_Store
 
 # Results
-comprehensive_comparison_results.json 
+comprehensive_comparison_results.json .DS_Store
