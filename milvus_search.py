@@ -3,6 +3,7 @@ import numpy as np
 import ollama
 from config import EMBEDDING_MODELS
 
+
 # Initialize Milvus client with Docker connection parameters
 connections.connect("default", host="localhost", port="19530")
 

@@ -11,13 +11,6 @@ EMBEDDING_MODELS = {
     "ollama-nomic": ("nomic-embed-text", 768) 
 }
 
-# EMBEDDING_MODELS = {
-#     "all-MiniLM-L6-v2": SentenceTransformer("all-MiniLM-L6-v2"),
-#     "all-mpnet-base-v2": SentenceTransformer("all-mpnet-base-v2"),
-#     "InstructorXL": SentenceTransformer("hkunlp/instructor-xl"),
-#     "ollama-nomic": "nomic-embed-text",
-# }
-
 VECTOR_INDEXES = {
     "all-MiniLM-L6-v2": "embedding_index_384",
     "all-mpnet-base-v2": "embedding_index_768",
