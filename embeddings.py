@@ -1,6 +1,4 @@
 from sentence_transformers import SentenceTransformer
-import time
-import tracemalloc
 import numpy as np
 from config import EMBEDDING_MODELS
 import ollama

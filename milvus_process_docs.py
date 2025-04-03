@@ -6,8 +6,7 @@ from preprocessing import extract_clean_pdf, split_text_into_chunks
 from config import EMBEDDING_MODELS
 from tqdm import tqdm
 
-
-# Initialize Milvus client
+# Connect to Milvus
 connections.connect("default", host="localhost", port="19530")
 
 def create_collection(model_name):
@@ -45,15 +44,14 @@ def clear_collections():
         collection_name = f"documents_{model_name.replace('-', '_')}"
         if utility.has_collection(collection_name):
             utility.drop_collection(collection_name)
-            print(f"🗑️ Dropped existing collection: {collection_name}")
+            print(f"Dropped existing collection: {collection_name}")
 
 def process_pdfs(data_dir):
     collections = {model_name: create_collection(model_name) for model_name in EMBEDDING_MODELS}
-
     pdf_files = [f for f in os.listdir(data_dir) if f.endswith(".pdf")]
 
     for model_name, (model, _) in EMBEDDING_MODELS.items():
-        print(f"📥 Processing files for model: {model_name}")
+        print(f"Processing files for model: {model_name}")
         total_chunks = 0
 
         for file_name in pdf_files:
@@ -62,7 +60,7 @@ def process_pdfs(data_dir):
             for text in extracted_pages.values():
                 total_chunks += len(split_text_into_chunks(text))
 
-        with tqdm(total=total_chunks, desc=f"Storing chunks for {model_name}") as pbar:
+        with tqdm(total=total_chunks, desc=f"Inserting into Milvus ({model_name})") as pbar:
             for file_name in pdf_files:
                 pdf_path = os.path.join(data_dir, file_name)
                 extracted_pages = extract_clean_pdf(pdf_path)
@@ -88,11 +86,11 @@ def create_vector_indexes():
     try:
         for model_name in EMBEDDING_MODELS:
             create_collection(model_name)
-            print(f"✅ Milvus collection for {model_name} created or verified successfully!")
+            print(f"Milvus collection for {model_name} is ready.")
     except Exception as e:
         print(f"Error creating Milvus collections: {e}")
 
 if __name__ == "__main__":
     clear_collections()
     create_vector_indexes()
-    process_pdfs("ds4300 docs")
+    process_pdfs("ds4300 docs") 
