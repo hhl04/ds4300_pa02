@@ -14,32 +14,43 @@ from pymilvus import connections, Collection, FieldSchema, CollectionSchema, Dat
 import ollama
 import numpy as np
 
-# Suppress httpx and sentence_transformers info logs
+# Suppress logging from libraries to reduce noise
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
-# Configure logging
+# Set up basic logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ComprehensiveComparison:
     def __init__(self):
+        # Set directory for ChromaDB persistence
         self.persist_directory = "./chroma_db"
+
+        # LLM models with their identifiers
         self.llm_models = {
             "Mistral": "mistral",
             "Llama": "llama2"
         }
+
+        # Embedding models to be used
         self.embedding_models = {
             "all-MiniLM-L6-v2": "sentence-transformers/all-MiniLM-L6-v2",
             "all-mpnet-base-v2": "sentence-transformers/all-mpnet-base-v2",
             "InstructorXL": "hkunlp/instructor-xl"
         }
+
+        # Different chunk sizes and overlaps to test
         self.chunk_sizes = [200, 500, 1000]
         self.chunk_overlaps = [0, 50, 100]
-        #self.vector_dbs = ["ChromaDB", "Redis", "Milvus"]
+
+        # Vector databases to compare
         self.vector_dbs = ["Milvus", "Redis", "ChromaDB"]
+
+        # Store results in a dictionary
         self.results = {}
 
+        # Sample queries to test performance
         self.test_queries = [
             "What is the difference between a list where memory is contiguously allocated and a list where linked structures are used?",
             "When are linked lists faster than contiguously-allocated lists?",
@@ -57,18 +68,23 @@ class ComprehensiveComparison:
             "What does the $nin operator mean in a Mongo query?"
         ]
 
+        # Connect to Redis and Milvus
         self.redis_client = redis.Redis(host="localhost", port=6380, db=0)
         connections.connect("default", host="localhost", port="19530")
+
+        # Load sentence transformer models
         self.sentence_transformers = {
             name: SentenceTransformer(model_path)
             for name, model_path in self.embedding_models.items()
         }
 
     def get_memory_usage(self):
+        # Return memory usage of current process in MB
         process = psutil.Process(os.getpid())
-        return process.memory_info().rss / 1024 / 1024  # MB
+        return process.memory_info().rss / 1024 / 1024
 
     def load_pdf_documents(self):
+        # Load and extract text from all PDF files in directory
         documents = []
         pdf_dir = "./ds4300 docs"
         for pdf_file in os.listdir(pdf_dir):
@@ -80,10 +96,12 @@ class ComprehensiveComparison:
         return documents
 
     def create_chunks(self, text, chunk_size, overlap):
+        # Split text into chunks with specified overlap
         words = text.split()
         return [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size - overlap)]
 
     def get_embedding(self, text, model_name):
+        # Get embedding using either LLM or embedding model
         if model_name in self.llm_models:
             response = ollama.embeddings(model=self.llm_models[model_name], prompt=text)
             return np.array(response['embedding'], dtype=np.float32)
@@ -92,6 +110,7 @@ class ComprehensiveComparison:
             return model.encode(text)
 
     def test_vector_db(self, db_name, model_name, chunk_size, overlap):
+        # Run a full vector DB test for the given configuration
         name = f"test_{chunk_size}_{overlap}_{model_name}_{db_name}"
         collection_name = name.replace("-", "_")
         documents = self.load_pdf_documents()
@@ -99,12 +118,14 @@ class ComprehensiveComparison:
         for doc in documents:
             chunks.extend(self.create_chunks(doc, chunk_size, overlap))
 
+        # Generate embeddings for all chunks
         embeddings = []
         for chunk in tqdm(chunks, desc=f"Embedding [{model_name} | {db_name}]", leave=False):
             embedding = self.get_embedding(chunk, model_name)
             embeddings.append(embedding)
         embeddings = np.array(embeddings)
 
+        # Insert into ChromaDB
         if db_name == "ChromaDB":
             client = chromadb.PersistentClient(path=self.persist_directory)
             if collection_name in client.list_collections():
@@ -118,6 +139,7 @@ class ComprehensiveComparison:
             )
             indexing_time = time.time() - start_time
 
+        # Insert into Redis
         elif db_name == "Redis":
             start_time = time.time()
             VECTOR_DIM = len(embeddings[0])
@@ -139,49 +161,46 @@ class ComprehensiveComparison:
                 self.redis_client.hset(key, mapping={"text": chunk, "embedding": embedding.tobytes()})
             indexing_time = time.time() - start_time
 
+        # Insert into Milvus
         elif db_name == "Milvus":
             start_time = time.time()
 
-            # Drop existing collection if it exists
+            # Delete collection if already exists
             if collection_name in utility.list_collections():
                 existing = Collection(collection_name)
                 existing.drop()
 
-            # Define fields using FieldSchema
+            # Define schema for Milvus
             fields = [
                 FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
                 FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
                 FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=len(embeddings[0]))
             ]
-
-            # Create a valid CollectionSchema
             schema = CollectionSchema(fields=fields, description="Document embedding collection")
 
-            # Create the collection with proper schema
+            # Create and insert into collection
             collection = Collection(name=collection_name, schema=schema)
-
-            # Insert data
             entities = [
-                list(range(len(chunks))),  
-                chunks,                    
-                embeddings.tolist()       
+                list(range(len(chunks))),
+                chunks,
+                embeddings.tolist()
             ]
             collection.insert(entities)
 
-            # Create index
+            # Create index on embeddings
             collection.create_index(
                 field_name="embedding",
                 index_params={"index_type": "IVF_FLAT", "metric_type": "COSINE", "params": {"nlist": 128}}
             )
-
             collection.flush()
             indexing_time = time.time() - start_time
 
-
+        # Perform search queries
         query_results = []
         for query in tqdm(self.test_queries, desc=f"Querying [{model_name} | {db_name}]", leave=False):
             query_embedding = self.get_embedding(query, model_name)
             start_time = time.time()
+
             if db_name == "ChromaDB":
                 results = collection.query(query_embeddings=[query_embedding], n_results=3)
                 query_results.append({
@@ -192,6 +211,7 @@ class ComprehensiveComparison:
                         "query_time": time.time() - start_time
                     }
                 })
+
             elif db_name == "Redis":
                 q = (
                     Query(f"*=>[KNN 3 @embedding $vec AS vector_distance]")
@@ -208,6 +228,7 @@ class ComprehensiveComparison:
                         "query_time": time.time() - start_time
                     }
                 })
+
             elif db_name == "Milvus":
                 collection.load()
                 search_params = {"metric_type": "COSINE", "params": {"nprobe": 10}}
@@ -237,6 +258,7 @@ class ComprehensiveComparison:
         }
 
     def evaluate_combination(self, results):
+        # Score the configuration based on speed and memory usage
         if not results.get("success"):
             return float("-inf")
         indexing_time = results["indexing"]["time"]
@@ -245,6 +267,7 @@ class ComprehensiveComparison:
         return - (indexing_time + avg_query_time + memory_usage)
 
     def find_best_chunk_size(self, model_name, db_name):
+        # Test different chunk sizes and pick the best
         logger.info(f"Finding best chunk size for {model_name} on {db_name}")
         best_score, best_chunk_size = float("-inf"), None
         for chunk_size in self.chunk_sizes:
@@ -270,6 +293,7 @@ class ComprehensiveComparison:
         return best_chunk_size
 
     def find_best_overlap(self, model_name, db_name, chunk_size):
+        # Test different overlaps for a fixed chunk size and choose the best
         logger.info(f"Finding best overlap for {model_name} on {db_name} with chunk size {chunk_size}")
         best_score, best_overlap = float("-inf"), None
         for overlap in self.chunk_overlaps:
@@ -294,6 +318,7 @@ class ComprehensiveComparison:
         return best_overlap
 
     def run_comparison(self):
+        # Run full experiment across all model and DB combinations
         best_combinations = {}
 
         for model_name in tqdm(self.llm_models, desc="LLM Models"):
@@ -317,7 +342,9 @@ class ComprehensiveComparison:
                     }
 
         self.results["best_combinations"] = best_combinations
-        with open("comprehensive_comparison_results.json", "w") as f:
+
+        # Save results to JSON file
+        with open("comprehensive_comparison_results1.json", "w") as f:
             json.dump(self.results, f, indent=2)
 
 if __name__ == "__main__":
